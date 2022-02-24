@@ -527,6 +527,25 @@ static void midi_dump(t_midi *x){
     outlet_bang(x->x_bangout);
 }
 
+static void midi_dump_delta(t_midi *x){
+    t_midievent *ep = x->x_sequence;
+    int nevents = x->x_nevents;
+    while(nevents--){  // LATER rethink sysex continuation
+        unsigned char *bp = ep->e_bytes;
+        double dp = ep->e_delta;
+        int size = strlen((char*) bp);
+	t_atom at[size + 1];
+	SETFLOAT(at, (t_float)dp);
+	SETFLOAT(at + 1, (t_float)*bp);
+	int i;
+	for(i = 0, bp++; i < size -1 && *bp != MIDI_EOM; i++, bp++)
+		SETFLOAT(at + i + 2, (t_float)*bp);
+        outlet_list(((t_object *)x)->ob_outlet, &s_list, size, at);
+	ep++;
+    }
+    outlet_bang(x->x_bangout);
+}
+
 static void midi_clocktick(t_midi *x){
     t_float output;
     if(x->x_mode == MIDI_PLAYMODE || x->x_mode == MIDI_SLAVEMODE){
@@ -986,6 +1005,7 @@ void midi_setup(void){
     class_addmethod(midi_class, (t_method)midi_write, gensym("save"), A_DEFSYM, 0);
     class_addmethod(midi_class, (t_method)midi_panic, gensym("panic"), 0);
     class_addmethod(midi_class, (t_method)midi_dump, gensym("dump"), 0);
+    class_addmethod(midi_class, (t_method)midi_dump_delta, gensym("dump_delta"), 0);
     class_addmethod(midi_class, (t_method)midi_pause, gensym("pause"), 0);
     class_addmethod(midi_class, (t_method)midi_continue, gensym("continue"), 0);
     class_addmethod(midi_class, (t_method)midi_click, gensym("click"), A_FLOAT, A_FLOAT, A_FLOAT, A_FLOAT, A_FLOAT, 0);
