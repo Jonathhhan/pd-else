@@ -79,7 +79,7 @@ higher in the case of low frequencies., f 62;
 ;
 #N canvas 519 92 847 522 sync 0;
 #X text 517 49 Syncing the phase with control messages is useful for
-LFOs and control with MIDI. A sync with audio is usefull for the "hard
+LFOs and control with MIDI. A sync with audio is useful for the "hard
 sync" technique \, where an oscillator is synced according to the frequency
 of a master frequency., f 44;
 #X obj 506 266 else/out~;

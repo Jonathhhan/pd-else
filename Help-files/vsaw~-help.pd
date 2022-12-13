@@ -47,7 +47,7 @@
 #X obj 115 257 else/graph~ 300 43;
 #X obj 115 162 else/vsaw~ 200;
 #X text 35 20 A width of 0 or 1 makes it a sawtooth like waveform \,
-while beteen 0 and 1 makes it triangular variants., f 53;
+while between 0 and 1 makes it triangular variants., f 53;
 #X connect 1 0 2 0;
 #X connect 2 0 3 0;
 #X connect 3 0 5 1;
@@ -249,7 +249,7 @@ also becomes a triangular osccilator. It accepts negative frequencies
 ;
 #N canvas 280 50 847 522 sync 0;
 #X text 517 49 Syncing the phase with control messages is useful for
-LFOs and control with MIDI. A sync with audio is usefull for the "hard
+LFOs and control with MIDI. A sync with audio is useful for the "hard
 sync" technique \, where an oscillator is synced according to the frequency
 of a master frequency., f 44;
 #X obj 522 266 else/out~;

@@ -52,7 +52,7 @@
 #X text 175 307 signal - audio signal input, f 51;
 #X text 181 341 float - sets speed, f 50;
 #X text 181 364 float - sets transposition in cents, f 50;
-#X text 187 322 bang - resets to the beggining of the delay line,
+#X text 187 322 bang - resets to the beginning of the delay line,
 f 49;
 #X text 148 450 2) float - sets playing speed (default 100), f 61
 ;

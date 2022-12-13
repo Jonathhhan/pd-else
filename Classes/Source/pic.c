@@ -2,7 +2,13 @@
 
 #include <m_pd.h>
 #include <g_canvas.h>
+
+#ifdef _MSC_VER
+#include <io.h>
+#else
 #include <unistd.h>
+#endif
+
 #include <string.h>
 
 #ifdef _MSC_VER
@@ -63,17 +69,17 @@ static void pic_draw_io_let(t_pic *x){
             cv, xpos, ypos+x->x_height, xpos+IOWIDTH*x->x_zoom, ypos+x->x_height-IHEIGHT*x->x_zoom, x);
 }
 
-// --------------------------------------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // helper functions
 static const char* pic_filepath(t_pic *x, const char *filename){
-    static char fname[MAXPDSTRING];
+    static char fn[MAXPDSTRING];
     char *bufptr;
-    int fd = open_via_path(canvas_getdir(glist_getcanvas(x->x_glist))->s_name,
-        filename, "", fname, &bufptr, MAXPDSTRING, 1);
+    int fd = canvas_open(glist_getcanvas(x->x_glist),
+        filename, "", fn, &bufptr, MAXPDSTRING, 1);
     if(fd > 0){
-        fname[strlen(fname)]='/';
-        close(fd);
-        return(fname);
+        fn[strlen(fn)]='/';
+        sys_close(fd);
+        return(fn);
     }
     else
         return(0);
@@ -213,11 +219,8 @@ static void pic_draw(t_pic* x, struct _glist *glist, t_floatarg vis){
     }
     else{
         if(visible || vis){
-//            post("draw: visible (%d) / vis (%d)", visible, vis);
-//            sys_vgui(".x%lx.c create image %d %d -anchor nw -image %lx_picname -tags %lx_picture\n", cv, xpos, ypos, x->x_fullname, x);
             sys_vgui("if { [info exists %lx_picname] == 1 } { .x%lx.c create image %d %d -anchor nw -image %lx_picname -tags %lx_picture\n} \n",
                 x->x_fullname, cv, xpos, ypos, x->x_fullname, x);
-//            post("drawnnnnn: visible (%d) / vis (%d)", visible, vis);
         }
         if(!x->x_init)
             x->x_init = 1;
@@ -233,7 +236,6 @@ static void pic_draw(t_pic* x, struct _glist *glist, t_floatarg vis){
 }
 
 static void pic_erase(t_pic* x, struct _glist *glist){
-//    post("erase");
     t_canvas *cv = glist_getcanvas(glist);
     sys_vgui(".x%lx.c delete %lx_picture\n", cv, x); // ERASE
     sys_vgui(".x%lx.c delete %lx_in\n", cv, x);
@@ -259,17 +261,13 @@ static void pic_save(t_gobj *z, t_binbuf *b){
 
 //------------------------------- METHODS --------------------------------------------
 static void pic_size_callback(t_pic *x, t_float w, t_float h){ // callback
-//    post("callback");
     x->x_width = w;
     x->x_height = h;
     if(glist_isvisible(x->x_glist) && gobj_shouldvis((t_gobj *)x, x->x_glist)){
-//        post("visible");
         t_canvas *cv = glist_getcanvas(x->x_glist);
         int xpos = text_xpix(&x->x_obj, x->x_glist), ypos = text_ypix(&x->x_obj, x->x_glist);
-//        post("----callback");
         sys_vgui("if { [info exists %lx_picname] == 1 } { .x%lx.c create image %d %d -anchor nw -image %lx_picname -tags %lx_picture\n} \n",
             x->x_fullname, cv, xpos, ypos, x->x_fullname, x);
-//        post("----called-back");
         canvas_fixlinesfor(x->x_glist, (t_text*)x);
         if(x->x_edit || x->x_outline){
             sys_vgui(".x%lx.c delete %lx_outline\n", cv, x);
@@ -428,7 +426,6 @@ static void edit_proxy_any(t_edit_proxy *p, t_symbol *s, int ac, t_atom *av){
 
 static void pic_zoom(t_pic *x, t_floatarg zoom){
     x->x_zoom = (int)zoom;
-    pic_draw_io_let(x);
 }
 
 //------------------- Properties --------------------------------------------------------
@@ -451,6 +448,14 @@ void pic_properties(t_gobj *z, t_glist *gl){
 
 static void pic_ok(t_pic *x, t_symbol *s, int ac, t_atom *av){
     s = NULL;
+    t_atom undo[6];
+    SETSYMBOL(undo+0, x->x_filename);
+    SETFLOAT(undo+1, x->x_outline);
+    SETFLOAT(undo+2, x->x_size);
+    SETFLOAT(undo+3, x->x_latch);
+    SETSYMBOL(undo+4, x->x_snd_raw);
+    SETSYMBOL(undo+5, x->x_rcv_raw);
+    pd_undo_set_objectstate(x->x_glist, (t_pd*)x, gensym("ok"), 6, undo, ac, av);
     pic_open(x, atom_getsymbolarg(0, ac, av));
     pic_outline(x, atom_getfloatarg(1, ac, av));
     pic_size(x, atom_getfloatarg(2, ac, av));
@@ -503,7 +508,6 @@ static void *pic_new(t_symbol *s, int ac, t_atom *av){
     int loaded = x->x_rcv_set = x->x_snd_set = x->x_def_img = x->x_init = x->x_latch = 0;
     x->x_outline = x->x_size = 0;
     x->x_fullname = NULL;
-    
     if(ac && av->a_type == A_FLOAT){ // 1ST outline
         x->x_outline = (int)(av->a_w.w_float != 0);
         ac--; av++;
@@ -591,12 +595,12 @@ static void *pic_new(t_symbol *s, int ac, t_atom *av){
         else goto errstate;
     };
     if(x->x_filename !=  &s_){
-        const char *fname = pic_filepath(x, x->x_filename->s_name); // full path
-        if(fname){
+        const char *fn = pic_filepath(x, x->x_filename->s_name); // full path
+        if(fn){
             loaded = 1;
-            x->x_fullname = gensym(fname);
+            x->x_fullname = gensym(fn);
             sys_vgui("if { [info exists %lx_picname] == 0 } { image create photo %lx_picname -file \"%s\"\n set %lx_picname 1\n}\n",
-                    x->x_fullname, x->x_fullname, fname, x->x_fullname);
+                    x->x_fullname, x->x_fullname, fn, x->x_fullname);
         }
         else
             pd_error(x, "[pic]: error opening file '%s'", x->x_filename->s_name);

@@ -4,18 +4,15 @@
 #include "magic.h"
 #include "buffer.h"
 #include <stdlib.h>
-#include <math.h>
-
-#define HALF_PI (3.14159265358979323846 * 0.5)
-
-#define ONE_SIXTH 0.16666666666666666666667f
-#define SHARED_FLT_MAX  1E+36
 
 typedef struct _tabplayer{
     t_object    x_obj;
     t_buffer   *x_buffer;
     t_glist    *x_glist;
     int         x_hasfeeders;       // if there's a signal coming in the main inlet
+    int         x_interp;
+    int         x_trig_mode;
+    float       x_lastin;
     float       x_sr_khz;           // pd's sample rate
     float       x_array_sr_khz;     // array's sample rate
     float       x_range_start;
@@ -145,7 +142,7 @@ static void tabplayer_play(t_play *x, t_symbol *s, int ac, t_atom *av){
     s = NULL;
     if(ac){ // args: start (ms) / end (ms), rate
         float stms = 0;
-        float endms = SHARED_FLT_MAX;
+        float endms =  1E+36; // stupidly high number
         int argnum = 0;
         while(ac){
             if(av->a_type == A_FLOAT){
@@ -174,6 +171,14 @@ static void tabplayer_play(t_play *x, t_symbol *s, int ac, t_atom *av){
     tabplayer_bang(x);
 }
 
+static void tabplayer_spline(t_play *x){
+    x->x_interp = 0;
+}
+
+static void tabplayer_lagrange(t_play *x){
+    x->x_interp = 1;
+}
+
 static void tabplayer_stop(t_play *x){
     if(x->x_playing){
         x->x_playing = x->x_playnew = 0;
@@ -195,6 +200,10 @@ static void tabplayer_resume(t_play *x){
 
 static void tabplayer_loop(t_play *x, t_floatarg f){
     x->x_loop = f > 0 ? 1 : 0;
+}
+
+static void tabplayer_trigger(t_play *x, t_floatarg f){
+    x->x_trig_mode = f > 0 ? 1 : 0;
 }
 
 static double tabplayer_fade_gain(t_play *x, double phase){
@@ -240,7 +249,7 @@ static double tabplayer_interp(t_play *x, int ch, double phase){
     t_word **vectable = x->x_buffer->c_vectors; // ??
     t_word *vp = vectable[ch]; // ??
     if(vp){
-        float f,  a,  b,  c,  d, cmb;
+        float f;
         int maxindex = x->x_npts - 3;
         if(phase < 0 || phase > maxindex)
             phase = 0;  // CHECKED: a value 0, not ndx 0 (???)
@@ -256,12 +265,14 @@ static double tabplayer_interp(t_play *x, int ch, double phase){
         else
             f = phase - ndx;
         vp += ndx;
-        a = vp[-1].w_float;
-        b = vp[0].w_float;
-        c = vp[1].w_float;
-        d = vp[2].w_float;
-        cmb = c-b;
-        out = b + f*(cmb - ONE_SIXTH*(1.-f)*((d - a - 3.0f*cmb)*f + (d + 2.0f*a - 3.0f*b)));
+        double a = vp[-1].w_float;
+        double b = vp[0].w_float;
+        double c = vp[1].w_float;
+        double d = vp[2].w_float;
+        if(x->x_interp)
+            out = interp_lagrange(f, a, b, c, d);
+        else
+            out = interp_spline(f, a, b, c, d);
     }
     return(out);
 }
@@ -271,18 +282,89 @@ static t_int *tabplayer_perform(t_int *w){
     t_buffer *buffer = x->x_buffer;
     int n = (int)(w[2]);
     int ch, i;
+    t_float *xin = x->x_ivec;
+    float last_sig_input = x->x_lastin;
     if(buffer->c_playable){
-        if(x->x_hasfeeders){ // signal input present, indexing into array
-            t_float *xin = x->x_ivec;
+        if(x->x_hasfeeders){ // signal input present
             for(i = 0; i < n; i++){
-                float phase = *xin++;
+                float sig_input = *xin++;
                 for(ch = 0; ch < x->x_n_ch; ch++){
                     t_float *output = *(x->x_ovecs+ch);
-                    output[i] = tabplayer_interp(x, ch, phase);
+                    if(sig_input != 0 && last_sig_input == 0){ // bang
+                        x->x_position = 0;
+                        x->x_playing = x->x_playnew = 1; // start playing
+                    }
+                    else if(!x->x_trig_mode && sig_input == 0 && last_sig_input != 0){
+                        if(x->x_playing){
+                            x->x_playing = x->x_playnew = 0;
+                            outlet_bang(x->x_donelet);
+                        };
+                    }
+                    if(!x->x_playing) // not playing, out zeros
+                        output[i] = 0;
+                    else{ // PLAYING
+                        if(x->x_playnew){
+                            if(!x->x_position)
+                                x->x_phase = x->x_isneg ? (double)x->x_end : (double)x->x_start;
+                            else
+                                x->x_position = 0;
+                            x->x_playnew = 0;
+                                x->x_first = 1;
+                        };
+                        double phase = x->x_phase;
+                        if(x->x_isneg){ // bounds checking backwards
+                            if(phase < x->x_start){
+                                if(x->x_loop){
+                                    double dif = (double)x->x_start - phase;
+                                    phase = (double)(x->x_end) - dif;
+                                    x->x_first = 0;
+                                    outlet_bang(x->x_donelet);
+                                }
+                                else{ // done playing
+                                    outlet_bang(x->x_donelet);
+                                    x->x_playing = 0;
+                                };
+                            }
+                        }
+                        else{ // bounds checking forwards
+                            if(phase > x->x_end){
+                                if(x->x_loop){
+                                    phase = (double)x->x_start + phase - (double)x->x_end;
+                                    x->x_first = 0;
+                                    outlet_bang(x->x_donelet);
+                                }
+                                else{ //we're done
+                                    outlet_bang(x->x_donelet);
+                                    x->x_playing = 0;
+                                };
+                            }
+                        };
+                        output[i] = tabplayer_interp(x, ch, phase);
+                        if(x->x_fadesamp > 0){
+                            output[i] *= tabplayer_fade_gain(x, phase);
+                            if(x->x_xfade && x->x_loop){
+                                if(x->x_isneg){
+                                    if(x->x_fading_in){
+                                        double xphase = phase - (double)(x->x_start) + (double)(x->x_end);
+                                        output[i] += (tabplayer_interp(x, ch, xphase) * cos(x->x_fade_point * HALF_PI));
+                                    }
+                                }
+                                else{
+                                    if(x->x_fading_out){
+                                        double xphase = phase - (double)(x->x_end - x->x_fadesamp) + (double)(x->x_start - x->x_fadesamp);
+                                        output[i] += (tabplayer_interp(x, ch, xphase) * sin(x->x_fade_point * HALF_PI));
+                                    }
+                                }
+                            }
+                        }
+                        x->x_phase = phase + x->x_sr_ratio*x->x_rate; // increment phase
+                    }
                 };
+                last_sig_input = sig_input;
             };
         }
         else{ // no signal input present, auto playback mode
+            last_sig_input = 0;
             if(!x->x_playing) // not playing, out zeros
                 goto nullstate;
             else{ // PLAYING
@@ -358,13 +440,14 @@ static t_int *tabplayer_perform(t_int *w){
                     *output++ = 0;
             };
     };
+    x->x_lastin = last_sig_input;
     return(w+3);
 }
 
 static void tabplayer_dsp(t_play *x, t_signal **sp){
     buffer_checkdsp(x->x_buffer);
     unsigned long long npts = x->x_buffer->c_npts;
-    x->x_hasfeeders = magic_inlet_connection((t_object *)x, x->x_glist, 0, &s_signal);
+    x->x_hasfeeders = else_magic_inlet_connection((t_object *)x, x->x_glist, 0, &s_signal);
     t_float pdksr = sp[0]->s_sr * 0.001;
     if(x->x_sr_khz != pdksr)
         x->x_sr_ratio = (double)(x->x_array_sr_khz/(x->x_sr_khz = pdksr));
@@ -391,13 +474,16 @@ static void *tabplayer_new(t_symbol * s, int ac, t_atom *av){
     t_symbol *arrname = NULL;
     t_float channels = 1;
     t_float fade = 0;
+    x->x_interp = 0;
     t_float range_start = 0;
     t_float range_end = 1;
     x->x_xfade = 0;
+    x->x_lastin = 0;
     x->x_sr_khz = (float)sys_getsr() * 0.001;
     x->x_array_sr_khz = x->x_sr_khz; // pd's sample rate for now
     x->x_loop = 0;
     x->x_rate = 1.f;
+    x->x_trig_mode = 0;
     int nameset = 0;
     int argn = 0;
     while(ac){
@@ -409,6 +495,10 @@ static void *tabplayer_new(t_symbol * s, int ac, t_atom *av){
             }
             else if(s == gensym("-xfade") && !argn){
                 x->x_xfade = 1;
+                ac--, av++;
+            }
+            else if(s == gensym("-tr") && !argn){
+                x->x_trig_mode = 1;
                 ac--, av++;
             }
             else if(s == gensym("-fade") && ac >= 2  && !argn){
@@ -429,6 +519,10 @@ static void *tabplayer_new(t_symbol * s, int ac, t_atom *av){
                 range_start = atom_getfloatarg(1, ac, av);
                 range_end = atom_getfloatarg(2, ac, av);
                 ac-=3, av+=3;
+            }
+            else if(s == gensym("-lagrange") && !argn){
+                x->x_interp = 1;
+                ac--, av++;
             }
             else if(!nameset){
                 arrname = s;
@@ -481,6 +575,8 @@ void tabplayer_tilde_setup(void){
     class_addmethod(tabplayer_class, (t_method)tabplayer_set, gensym("set"), A_SYMBOL, 0);
     class_addmethod(tabplayer_class, (t_method)tabplayer_pos, gensym("pos"), A_FLOAT, 0);
     class_addmethod(tabplayer_class, (t_method)tabplayer_play, gensym("play"), A_GIMME, 0);
+    class_addmethod(tabplayer_class, (t_method)tabplayer_lagrange, gensym("lagrange"), 0);
+    class_addmethod(tabplayer_class, (t_method)tabplayer_spline, gensym("spline"), 0);
     class_addmethod(tabplayer_class, (t_method)tabplayer_stop, gensym("stop"), 0);
     class_addmethod(tabplayer_class, (t_method)tabplayer_pause, gensym("pause"), 0);
     class_addmethod(tabplayer_class, (t_method)tabplayer_resume, gensym("resume"), 0);
@@ -490,6 +586,7 @@ void tabplayer_tilde_setup(void){
     class_addmethod(tabplayer_class, (t_method)tabplayer_range, gensym("range"), A_FLOAT, A_FLOAT, 0);
     class_addmethod(tabplayer_class, (t_method)tabplayer_speed, gensym("speed"), A_FLOAT, 0);
     class_addmethod(tabplayer_class, (t_method)tabplayer_loop, gensym("loop"), A_FLOAT, 0);
+    class_addmethod(tabplayer_class, (t_method)tabplayer_trigger, gensym("tr"), A_FLOAT, 0);
     class_addmethod(tabplayer_class, (t_method)tabplayer_fade, gensym("fade"), A_FLOAT, 0);
     class_addmethod(tabplayer_class, (t_method)tabplayer_xfade, gensym("xfade"), A_FLOAT, 0);
     class_addmethod(tabplayer_class, (t_method)tabplayer_arraysr, gensym("sr"), A_FLOAT, 0);

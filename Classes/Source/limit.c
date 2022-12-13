@@ -105,8 +105,18 @@ static void limit_symbol(t_limit *x, t_symbol *s){
 
 static void limit_list(t_limit *x, t_symbol *s, int ac, t_atom *av){
     s = NULL;
-    x->x_selector = &s_list;
-    limit_anything(x, x->x_selector, ac, av);
+    if(!ac)
+        limit_bang(x);
+    else if(ac == 1){
+        if(av->a_type == A_FLOAT)
+            limit_float(x, atom_getfloat(av));
+        else if(av->a_type == A_SYMBOL)
+            limit_symbol(x, atom_getsymbol(av));
+    }
+    else{
+        x->x_selector = &s_list;
+        limit_anything(x, x->x_selector, ac, av);
+    }
 }
 
 static void limit_free(t_limit *x){

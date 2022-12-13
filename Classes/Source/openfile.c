@@ -1,10 +1,9 @@
-//
+// based on pddplink
 
-#include <stdio.h>
-#include <string.h>
 #include "m_pd.h"
-#include "m_imp.h"  /* FIXME need access to c_externdir... */
+#include "m_imp.h"  // FIXME need access to c_externdir...
 #include "g_canvas.h"
+#include <string.h>
 
 typedef struct _openfile{
     t_object   x_ob;
@@ -21,7 +20,7 @@ typedef struct _openfile{
 static t_class *openfile_class;
 static t_class *openfilebox_class;
 
-/* Code that might be merged back to g_text.c starts here: */
+// Code that might be merged back to g_text.c starts here: 
 
 static void openfile_getrect(t_gobj *z, t_glist *glist, int *xp1, int *yp1, int *xp2, int *yp2){
     t_openfile *x = (t_openfile *)z;
@@ -188,6 +187,7 @@ static void *openfile_new(t_symbol *s, int ac, t_atom *av){
     xgen.x_isboxed = 1;
     xgen.x_vistext = 0;
     xgen.x_vissize = 0;
+    xgen.x_ulink = 0;
     int argn = 0;
     while(ac > 0){
         if(av->a_type == A_SYMBOL){
@@ -229,10 +229,7 @@ static void *openfile_new(t_symbol *s, int ac, t_atom *av){
     x->x_vissize = xgen.x_vissize;
     x->x_vislength = (x->x_vistext ? strlen(x->x_vistext) : 0);
     x->x_rtextactive = 0;
-    if(xgen.x_ulink)
-        x->x_ulink = xgen.x_ulink;
-    else
-        x->x_ulink = &s_;
+    x->x_ulink = xgen.x_ulink ? xgen.x_ulink : &s_;
     if(!x->x_vistext){
         x->x_vislength = strlen(x->x_ulink->s_name);
         x->x_vissize = x->x_vislength + 1;

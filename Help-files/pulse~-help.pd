@@ -146,13 +146,13 @@
 #000000 #000000 0 1;
 #X obj 210 217 nbx 5 14 -1e+37 1e+37 0 0 empty empty empty 0 -8 0 10
 #dcdcdc #000000 #000000 0 256;
-#X text 23 22 The pulse width parameter controlls how much of the cycle
+#X text 23 22 The pulse width parameter controls how much of the cycle
 is "on" or "off". A pulse width of 0.5 means the first half is "on"
 and the lasr half is "off".;
 #X obj 177 269 else/pulse~ 100 0;
 #X text 30 71 A pulse width of 0 has the smallest "on" pulse size:
 a single sample - thus \, just like an impulse oscillator!;
-#X text 30 107 Conversely \, a pulse widht of 1 has the largest (the
+#X text 30 107 Conversely \, a pulse width of 1 has the largest (the
 entire period except the last sample).;
 #X obj 210 240 else/float2sig~ 10;
 #X text 32 148 The pulse width is set via the second argument or the
@@ -208,7 +208,7 @@ feature is phase modulation.;
 for pulse width \, phase sync and phase modulation.;
 #N canvas 403 51 863 462 sync 0;
 #X text 517 25 Syncing the phase with control messages is useful for
-LFOs and control with MIDI. A sync with audio is usefull for the "hard
+LFOs and control with MIDI. A sync with audio is useful for the "hard
 sync" technique \, where an oscillator is synced according to the frequency
 of a master frequency., f 44;
 #X obj 540 242 else/out~;
@@ -396,7 +396,7 @@ are from 0 to 1 and values beyond that are wrapped within this range.
 #X text 156 249 float/signal - frequency in hz;
 #X text 156 292 float/signal - phase sync (ressets internal phase)
 ;
-#X obj 214 206 else/display~;
+#X obj 214 206 else/numbox~ 6 10 100 #C0C0C4 #440008 10 0 0 0;
 #X text 36 177 see also:;
 #X obj 38 202 else/pulse;
 #X connect 18 0 32 0;

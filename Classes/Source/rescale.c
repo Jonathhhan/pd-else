@@ -2,14 +2,13 @@
  
 #include "m_pd.h"
 #include <math.h>
+#include <stdlib.h>
 
 static t_class *rescale_class;
 
 typedef struct _rescale{
     t_object    x_obj;
     t_outlet   *x_outlet;
-    t_atom     *x_at;
-    int         x_bytes;
     int         x_clip;
     float       x_f;
     float       x_minin;
@@ -51,22 +50,19 @@ static float convert(t_rescale *x, float f){
     }
 }
 
-static void rescale_bang(t_rescale *x){
-    outlet_float(x->x_outlet, convert(x, x->x_f));
-}
-
-static void rescale_float(t_rescale *x, t_floatarg f){
-    outlet_float(x->x_outlet, convert(x, x->x_f = f));
-}
-
 static void rescale_list(t_rescale *x, t_symbol *s, int ac, t_atom *av){
-    s = NULL; // avoid warning
-    int old_bytes = x->x_bytes, i = 0;
-    x->x_bytes = ac*sizeof(t_atom);
-    x->x_at = (t_atom *)t_resizebytes(x->x_at, old_bytes, x->x_bytes);
-    for(i = 0; i < ac; i++)
-        SETFLOAT(x->x_at+i, convert(x, atom_getfloatarg(i, ac, av)));
-    outlet_list(x->x_outlet, 0, ac, x->x_at);
+    s = NULL;
+    if(ac == 0)
+        outlet_float(x->x_outlet, convert(x, x->x_f));
+    else if(ac == 1)
+        outlet_float(x->x_obj.ob_outlet, convert(x, atom_getfloat(av)));
+    else{
+        t_atom* at = calloc(ac, sizeof(t_atom));
+        for(int i = 0; i < ac; i++)
+            SETFLOAT(at+i, convert(x, atom_getfloatarg(i, ac, av)));
+        outlet_list(x->x_obj.ob_outlet, &s_list, ac, at);
+        free(at);
+    }
 }
 
 static void rescale_set(t_rescale *x, t_floatarg f){
@@ -75,10 +71,6 @@ static void rescale_set(t_rescale *x, t_floatarg f){
 
 static void rescale_exp(t_rescale *x, t_floatarg f){
     x->x_exp = f;
-}
-
-static void rescale_free(t_rescale *x){
-    t_freebytes(x->x_at, x->x_bytes);
 }
 
 static void *rescale_new(t_symbol *s, int ac, t_atom *av){
@@ -92,7 +84,7 @@ static void *rescale_new(t_symbol *s, int ac, t_atom *av){
     t_int numargs = 0;
     if(ac > 0){
         if(av->a_type == A_SYMBOL){
-            if(atom_getsymbolarg(0, ac, av) == gensym("-clip"))
+            if(atom_getsymbolarg(0, ac, av) == gensym("-clip") && !numargs)
                 x->x_clip = 1;
             else
                 goto errstate;
@@ -155,8 +147,6 @@ static void *rescale_new(t_symbol *s, int ac, t_atom *av){
         else
             goto errstate;
     }
-    x->x_bytes = sizeof(t_atom);
-    x->x_at = (t_atom *)getbytes(x->x_bytes);
     x->x_outlet = outlet_new(&x->x_obj, 0);
     if(numargs <= 3){
         floatinlet_new(&x->x_obj, &x->x_minout);
@@ -175,11 +165,9 @@ errstate:
 }
 
 void rescale_setup(void){
-    rescale_class = class_new(gensym("rescale"), (t_newmethod)rescale_new,
-            (t_method)rescale_free, sizeof(t_rescale), 0, A_GIMME, 0);
-    class_addfloat(rescale_class, (t_method)rescale_float);
+    rescale_class = class_new(gensym("rescale"), (t_newmethod)rescale_new, 0,
+        sizeof(t_rescale), 0, A_GIMME, 0);
     class_addlist(rescale_class, (t_method)rescale_list);
-    class_addbang(rescale_class, (t_method)rescale_bang);
     class_addmethod(rescale_class, (t_method)rescale_set, gensym("set"), A_DEFFLOAT,0 );
     class_addmethod(rescale_class, (t_method)rescale_exp, gensym("exp"), A_DEFFLOAT, 0);
     class_addmethod(rescale_class, (t_method)rescale_clip, gensym("clip"), A_FLOAT, 0);

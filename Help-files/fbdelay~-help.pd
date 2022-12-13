@@ -222,7 +222,7 @@ default 0;
 #X text 364 199 <= Feedback (Decay time in ms), f 11;
 #N canvas 936 135 430 451 freeze 0;
 #X text 57 28 You can freeze the delay line with the 'freeze' message
-\, where zero freezes \, zero unfreezes. When frozen \, it stops writting
+\, where zero freezes \, zero unfreezes. When frozen \, it stops writing
 into it. Note that unlike [ffdelay~] \, the input still goes through.
 , f 52;
 #X obj 116 348 else/out~;

@@ -180,7 +180,7 @@ instead.;
 #X restore 582 334 pd oscillators;
 #X obj 76 261 else/display;
 #X obj 582 138 else/rand.i 60 80;
-#X text 37 20 You can directly connect the [notein] object to acess
+#X text 37 20 You can directly connect the [notein] object to access
 MIDI note messages from an external controller and access the MIDI
 message from an actual sustain pedal (which is normally controller
 number 64) and feed it to the [suspedal] object.;
@@ -245,25 +245,25 @@ are:, f 62;
 #X text 64 199 1 'retrigger', f 14;
 #X text 107 84 'free first' - sends a note off before retriggering
 a repeated note, f 59;
-#X text 107 112 'free later' - keeps a histroy of all received note
-ons and sends note off messages for all of them when the pedal is switched
-off (unlike mode 1 \, which only sends one not off);
 #X text 336 305 see also:;
 #X obj 357 328 else/voices;
 #X obj 364 356 else/adsr~;
 #X text 332 381 The above objects interact well with [suspedal] and
 its retrigger modes., f 18;
 #X obj 129 384 else/display;
+#X text 107 112 'free later' - keeps a history of all received Note-Ons
+and sends note off messages for all of them when the pedal is switched
+off (unlike mode 1 \, which only sends one not off);
 #X connect 0 0 1 0;
 #X connect 1 0 10 0;
-#X connect 2 0 26 0;
+#X connect 2 0 25 0;
 #X connect 3 0 4 0;
 #X connect 4 0 15 0;
 #X connect 10 0 15 0;
 #X connect 11 0 15 2;
 #X connect 15 0 2 0;
 #X connect 15 1 2 1;
-#X connect 26 0 5 0;
+#X connect 25 0 5 0;
 #X restore 467 234 pd retrigger;
 #N canvas 738 145 513 478 tonal 0;
 #X obj 110 215 tgl 15 0 empty empty empty 17 7 0 10 #dcdcdc #000000
@@ -278,7 +278,7 @@ note, f 26;
 #X obj 110 362 else/mono;
 #X obj 110 392 else/display;
 #X obj 161 393 else/display;
-#X text 166 153 4) play with keyboad (new notes aren't sustained);
+#X text 166 153 4) play with keyboard (new notes aren't sustained);
 #X text 34 156 1) turn on note;
 #X text 34 189 5) retrigger note;
 #X text 254 299 6);

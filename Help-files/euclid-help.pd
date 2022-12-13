@@ -21,7 +21,7 @@ width float bordercolor;
 #N canvas 0 22 450 278 (subpatch) 0;
 #X coords 0 1 100 -1 302 42 1;
 #X restore 2 3 graph;
-#X obj 105 40 cnv 4 4 4 empty empty rythm 0 28 2 18 #e0e0e0 #000000
+#X obj 105 40 cnv 4 4 4 empty empty rhythm 0 28 2 18 #e0e0e0 #000000
 0;
 #X obj 305 4 cnv 15 250 40 empty empty empty 12 13 0 18 #7c7c7c #e0e4dc
 0;
@@ -88,7 +88,7 @@ width float bordercolor;
 #X text 177 397 float;
 #X text 177 330 float;
 #X text 222 330 - step number;
-#X text 50 88 [euclid] implements an euclidean rythm algorithm. It
+#X text 50 88 [euclid] implements an euclidean rhythm algorithm. It
 takes a step number and returns if that step is a hit or a rest depending
 on parameters of: number of steps \, number of hits and rotation value.
 , f 65;
@@ -107,7 +107,7 @@ on parameters of: number of steps \, number of hits and rotation value.
 #000000 #000000 0;
 #X obj 192 262 else/euclid 16 7;
 #X text 291 235 <= try different divisions;
-#X text 88 43 The algorythm tries to divide a given number of steps
+#X text 88 43 The algorithm tries to divide a given number of steps
 as equally spaced as possible. In the example below we have 16 steps
 and \, by default \, 7 hits (change it to check it out), f 56;
 #X obj 122 330 noise~;

@@ -55,7 +55,7 @@
 \, which sets the range for all sliders., f 56;
 #X text 64 353 Note that when you change the range \, all values are
 updated internally to the new range before you ever change them by
-clicking and draging or the set message or whatever., f 48;
+clicking and dragging or the set message or whatever., f 48;
 #X connect 1 0 3 0;
 #X connect 2 0 3 0;
 #X connect 3 0 0 0;
@@ -172,7 +172,7 @@ the 'bgcolor' \, 'fgcolor' and 'linecolor' messages or '-bgcolor' \,
 255 255 220 220 220 0 0 0 1 0 0 holder holder 0 0 0 0 0 0 0 0;
 #X text 65 28 You can set to "jump on click" mode with the '-jump'
 flag or 'jump' message. Non zero sets to jump on click mode and zero
-(default) is "steady on clik" mode. These are the same as in Vanilla's
+(default) is "steady on click" mode. These are the same as in Vanilla's
 sliders.;
 #X text 65 80 In jump on click mode \, it behaves kinda like arrays
 in Pd when you clicck and drag around \, but it'll clip according to
@@ -381,7 +381,7 @@ affecting the locked one, f 21;
 #X obj 294 574 else/display;
 #X msg 282 262 mode \$1;
 #X text 286 287 The default mode is slider number / value;
-#X text 183 62 exports sliders' values as a list preceeded by 'export'
+#X text 183 62 exports sliders' values as a list preceded by 'export'
 ;
 #X text 284 149 dump all values sequentially as slider number / value
 ;

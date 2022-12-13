@@ -41,7 +41,7 @@
 #X restore 3 3 graph;
 #X obj 271 165 bng 15 250 50 0 empty empty empty 17 7 0 10 #dcdcdc
 #000000 #000000;
-#X obj 196 227 else/display~;
+#X obj 196 231 else/numbox~ 6 12 100 #c0c0c4 #440008 10 0 0 0;
 #X obj 142 293 cnv 17 3 17 empty empty 1 5 9 0 16 #dcdcdc #9c9c9c 0
 ;
 #X text 186 294 bang;
@@ -49,8 +49,8 @@
 #X text 216 387 (none);
 #X text 174 334 signal;
 #X text 216 334 - maximum peak value so far \, in dB;
-#X text 216 294 - retsarts the object;
-#X text 216 273 - incomming signal;
+#X text 216 294 - restarts the object;
+#X text 216 273 - incoming signal;
 #X obj 196 200 else/maxpeak~;
 #X obj 271 230 bng 15 250 50 0 empty empty empty 17 7 0 10 #dcdcdc
 #000000 #000000;

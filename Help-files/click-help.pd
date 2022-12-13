@@ -53,7 +53,7 @@
 #X restore 202 253 pd a_subpatch;
 #X obj 115 41 cnv 4 4 4 empty empty clicks 0 28 2 18 #e0e0e0 #000000
 0;
-#X text 53 96 [clik] sends a bang when you put it in an abstraction
+#X text 53 96 [click] sends a bang when you put it in an abstraction
 or a subpatch and click on the parent. This is useful for making non
 graphical abstractions respond to a click in the same way compiled
 objects can., f 73;

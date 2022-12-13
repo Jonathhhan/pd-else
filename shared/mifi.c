@@ -2,18 +2,17 @@
  * For information on usage and redistribution, and for a DISCLAIMER OF ALL
  * WARRANTIES, see the file, "LICENSE.txt," in this distribution.  */
 
+#include "m_pd.h"
+#include "mifi.h"
 #ifdef _WIN32
 #include <io.h>
 #else
 #include <unistd.h>
 #endif
 #include <stdlib.h>
-#include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
 #include <errno.h>
-#include "m_pd.h"
-#include "mifi.h"
 
 /* this is for GNU/Linux and also Debian GNU/Hurd and GNU/kFreeBSD */
 #if defined(__linux__) || defined(__FreeBSD_kernel__) || defined(__GNU__) || defined(__GLIBC__)
@@ -502,7 +501,7 @@ const char *dirname, int complain){
     if(path != fnameptr){
         char *slashpos = path + strlen(path);
         *slashpos++ = '/';
-        /* try not to be dependent on current open_via_path() implementation */
+        // try not to be dependent on current open_via_path() implementation
         if(fnameptr != slashpos)
             strcpy(slashpos, fnameptr);
     }

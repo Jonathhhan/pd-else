@@ -1,5 +1,5 @@
 #N canvas 570 23 561 710 10;
-#X obj 23 40 cnv 4 4 4 empty empty Acess 0 28 2 18 #e0e0e0 #000000
+#X obj 23 40 cnv 4 4 4 empty empty Access 0 28 2 18 #e0e0e0 #000000
 0;
 #X obj 77 40 cnv 4 4 4 empty empty file 0 28 2 18 #e0e0e0 #000000 0
 ;
@@ -100,7 +100,7 @@ current directory., f 77;
 #X msg 73 295 reset \, dir;
 #X text 145 295 resets to the default directory;
 #X text 66 187 When using the open message \, the rightmost outlet
-sends an open flag ("1" if the directory has been successfully openned
+sends an open flag ("1" if the directory has been successfully opened
 \, and 0 otherwise)., f 77;
 #X text 56 458 Opening a directory also loads its contents so you can
 query for files. If you change the contents of your directory \, you
@@ -254,7 +254,7 @@ letters are sorted before lower case letters., f 66;
 #X text 235 151 n;
 #X text 72 15 The 'n' message outputs the number of found files in
 the opened directory in the 3rd outlet. The seek message can search
-for a file acording to a number. If the seek number is greater than
+for a file according to a number. If the seek number is greater than
 the number of files \, then the search is wrapped according to the
 number of files. The seek number is indexed from '1' and clipped to
 '1' if < 1!, f 74;

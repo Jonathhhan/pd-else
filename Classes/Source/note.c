@@ -1,36 +1,40 @@
- // stolen from cyclone
+// Based on our work in comment from cyclone, which is now also based on this?
 
- #include <string.h>
- #include <ctype.h>
- #include "s_utf8.h"
- #include "m_pd.h"
- #include "g_canvas.h"
+#include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include "m_pd.h"
+#include "g_canvas.h"
 
-#define COMMNENT_MINSIZE    8
-#define HANDLE_WIDTH        8
-#define COMMENT_OUTBUFSIZE  16384
-
-#if __APPLE__
-char default_font[100] = "Menlo";
-#else
-char default_font[100] = "DejaVu Sans Mono";
+#ifndef _WIN32
+#include "s_utf8.h"
 #endif
 
-static t_class *comment_class, *commentsink_class, *handle_class, *edit_proxy_class;
-static t_widgetbehavior comment_widgetbehavior;
+#define NOTE_MINSIZE       8
+#define NOTE_HANDLE_WIDTH  8
+#define NOTE_OUTBUFSIZE    16384
 
-static t_pd *commentsink = 0;
+#if __APPLE__
+static char default_font[100] = "Menlo";
+#else
+static char default_font[100] = "DejaVu Sans Mono";
+#endif
 
-static void comment_getrect(t_gobj *z, t_glist *gl, int *xp1, int *yp1, int *xp2, int *yp2);
+static t_class *note_class, *notesink_class, *handle_class, *edit_proxy_class;
+static t_widgetbehavior note_widgetbehavior;
+
+static t_pd *notesink = 0;
+
+static void note_getrect(t_gobj *z, t_glist *gl, int *xp1, int *yp1, int *xp2, int *yp2);
 
 typedef struct _edit_proxy{
-    t_object    p_obj;
-    t_symbol   *p_sym;
-    t_clock    *p_clock;
-    struct      _comment *p_cnv;
+    t_object      p_obj;
+    t_symbol     *p_sym;
+    t_clock      *p_clock;
+    struct _note *p_cnv;
 }t_edit_proxy;
 
-typedef struct _comment{
+typedef struct _note{
     t_object        x_obj;
     t_edit_proxy   *x_proxy;
     t_glist        *x_glist;
@@ -39,11 +43,14 @@ typedef struct _comment{
     char           *x_buf;      // text buf
     int             x_bufsize;  // text buf size
     int             x_keynum;
-    t_symbol       *x_keysym;
     int             x_init;
+    int             x_resized;
     int             x_changed;
     int             x_edit;
     int             x_max_pixwidth;
+    int             x_text_width;
+    int             x_width;
+    int             x_height;
     int             x_bbset;
     int             x_bbpending;
     int             x_x1;
@@ -54,17 +61,19 @@ typedef struct _comment{
     int             x_dragon;
     int             x_select;
     int             x_fontsize;
-    unsigned char   x_red;
-    unsigned char   x_green;
-    unsigned char   x_blue;
-    char            x_color[8];
-    char            x_bgcolor[8];
     int             x_shift;
     int             x_selstart;
     int             x_start_ndx;
     int             x_end_ndx;
     int             x_selend;
     int             x_active;
+    unsigned char   x_red;
+    unsigned char   x_green;
+    unsigned char   x_blue;
+    unsigned char   x_bg[3]; // background color
+    char            x_color[8];
+    char            x_bgcolor[8];
+    t_symbol       *x_keysym;
     t_symbol       *x_bindsym;
     t_symbol       *x_fontname;
     t_symbol       *x_receive;
@@ -72,7 +81,7 @@ typedef struct _comment{
     int             x_rcv_set;
     int             x_flag;
     int             x_r_flag;
-    int             x_old;
+//    int             x_old;
     int             x_text_flag;
     int             x_text_n;
     int             x_text_size;
@@ -83,21 +92,21 @@ typedef struct _comment{
     int             x_underline;
     int             x_bg_flag;
     int             x_textjust; // 0: left, 1: center, 2: right
-    unsigned int    x_bg[3];    // background color
+    int             x_outline;
     t_pd           *x_handle;
-}t_comment;
+}t_note;
 
 typedef struct _handle{
-    t_pd            h_pd;
-    t_comment        *h_master;
-    t_symbol       *h_bindsym;
-    char            h_pathname[64], h_outlinetag[64];
-    int             h_dragon, h_dragx;
-    int             h_selectedmode;
+    t_pd        h_pd;
+    t_note     *h_master;
+    t_symbol   *h_bindsym;
+    char        h_pathname[64];
+    int         h_clicked;
 }t_handle;
 
 // helper functions
-static void comment_initialize(t_comment *x){
+static void note_initialize(t_note *x){
+//    post("initialize");
     t_binbuf *bb = x->x_obj.te_binbuf;
     int n_args = binbuf_getnatom(bb) - 1; // number of arguments
     if(x->x_text_flag){ // let's get the text from the attribute
@@ -113,7 +122,7 @@ static void comment_initialize(t_comment *x){
         freebytes(av, ac*sizeof(t_atom));
     }
     else{
-        int n = x->x_old ? 8 : 14;
+        int n = 14; // = x->x_old ? 8 : 14;
         if(n_args > n){
             int ac = n_args - n;
             t_atom* av = (t_atom *)getbytes(ac*sizeof(t_atom));
@@ -131,77 +140,98 @@ static void comment_initialize(t_comment *x){
     x->x_init = 1;
 }
 
-static void comment_draw_handle(t_comment *x, int state){
-    t_handle *ch = (t_handle *)x->x_handle;
-    int x1, y1, x2, y2;
-    comment_getrect((t_gobj *)x, x->x_glist, &x1, &y1, &x2, &y2);
-    if(state){
-        if(ch->h_selectedmode == 0){
-            sys_vgui("canvas %s -width %d -height %d -bg %s -bd 0 -cursor sb_h_double_arrow\n",
-                ch->h_pathname, HANDLE_WIDTH, y2-y1, "black");
-            ch->h_selectedmode = 1;
-        }
-        sys_vgui(".x%lx.c create window %d %d -anchor nw -width %d -height %d -window %s -tags all%lx\n",
-            x->x_cv,
-            x2 + 2*x->x_zoom,
-            y1 + x->x_zoom,
-            HANDLE_WIDTH*x->x_zoom,
-            y2-y1 + 2*x->x_zoom,
-            ch->h_pathname,
-            x);
-        sys_vgui("bind %s <Button> {pdsend [concat %s _click 1 \\;]}\n", ch->h_pathname, ch->h_bindsym->s_name);
-        sys_vgui("bind %s <ButtonRelease> {pdsend [concat %s _click 0 \\;]}\n", ch->h_pathname, ch->h_bindsym->s_name);
-        sys_vgui("bind %s <Motion> {pdsend [concat %s _motion %%x %%y \\;]}\n", ch->h_pathname, ch->h_bindsym->s_name);
-    }
-    else{
-        ch->h_selectedmode = 0;
-        sys_vgui("destroy %s\n", ch->h_pathname);
-    }
-}
-
-static void comment_draw_inlet(t_comment *x){
-    if(x->x_edit &&  x->x_receive == &s_){
-        t_canvas *cv = glist_getcanvas(x->x_glist);
-        int xpos = text_xpix(&x->x_obj, x->x_glist), ypos = text_ypix(&x->x_obj, x->x_glist);
-        sys_vgui(".x%lx.c create rectangle %d %d %d %d -fill black -tags %lx_in\n",
-            cv, xpos, ypos, xpos+(IOWIDTH*x->x_zoom), ypos+(IHEIGHT*x->x_zoom)-x->x_zoom, x);
-    }
-}
-
-static void comment_draw_outline(t_comment *x){
-    if(x->x_bbset && x->x_edit){
-//        post("comment_draw_outline");
-        sys_vgui(".x%lx.c create rectangle %d %d %d %d -tags %lx_outline -width %d -outline %s\n",
+static void note_draw_outline(t_note *x){
+    if(x->x_bbset && (x->x_edit || x->x_outline)){
+        int x1, y1, x2, y2;
+        note_getrect((t_gobj *)x, x->x_glist, &x1, &y1, &x2, &y2);
+        sys_vgui(".x%lx.c create rectangle %d %d %d %d -tags [list %lx_outline all%lx] -width %d -outline %s\n",
             (unsigned long)x->x_cv,
-            text_xpix((t_text *)x, x->x_glist),
-            text_ypix((t_text *)x, x->x_glist),
-            x->x_x2 + x->x_zoom * 2,
-            x->x_y2 + x->x_zoom * 2,
-            (unsigned long)x,
+            x1,
+            y1,
+            x2 + 2*x->x_zoom,
+            y2 + 2*x->x_zoom,
+            (unsigned long)x, // %lx_outline
+            (unsigned long)x, // all%lx
             x->x_zoom,
             x->x_select ? "blue" : "black");
     }
 }
 
-static void comment_draw(t_comment *x){
+static void note_draw_handle(t_note *x){
+    t_handle *ch = (t_handle *)x->x_handle;
+    sys_vgui("destroy %s\n", ch->h_pathname); // always destroy, bad hack, improve
+    if(x->x_edit){
+        int x1, y1, x2, y2;
+        note_getrect((t_gobj *)x, x->x_glist, &x1, &y1, &x2, &y2);
+        if(x->x_resized)
+            x2 = x1 + x->x_max_pixwidth * x->x_zoom;
+        sys_vgui("canvas %s -width %d -height %d -bg %s -cursor sb_h_double_arrow\n",
+            ch->h_pathname, NOTE_HANDLE_WIDTH, x->x_height, "black");
+        sys_vgui("bind %s <Button> {pdsend [concat %s _click 1 \\;]}\n", ch->h_pathname, ch->h_bindsym->s_name);
+        sys_vgui("bind %s <ButtonRelease> {pdsend [concat %s _click 0 \\;]}\n", ch->h_pathname, ch->h_bindsym->s_name);
+        sys_vgui("bind %s <Motion> {pdsend [concat %s _motion %%x %%y \\;]}\n", ch->h_pathname, ch->h_bindsym->s_name);
+        sys_vgui(".x%lx.c create window %d %d -anchor nw -width %d -height %d -window %s -tags [list handle%lx all%lx]\n",
+            x->x_cv,
+            x2 + 2*x->x_zoom,
+            y1,
+            NOTE_HANDLE_WIDTH + 2*x->x_zoom,
+            x->x_height + 1 + 2*x->x_zoom,
+            ch->h_pathname,
+            (unsigned long)x,
+            (unsigned long)x);
+    }
+}
+
+static void note_draw_inlet(t_note *x){
+    if(glist_isvisible(x->x_glist) && gobj_shouldvis((t_gobj *)x, x->x_glist)){
+        if(x->x_edit &&  x->x_receive == &s_){
+            t_canvas *cv = glist_getcanvas(x->x_glist);
+            int xpos = text_xpix(&x->x_obj, x->x_glist), ypos = text_ypix(&x->x_obj, x->x_glist);
+            sys_vgui(".x%lx.c create rectangle %d %d %d %d -fill black -tags [list %lx_in all%lx]\n",
+                cv, xpos, ypos, xpos+(IOWIDTH*x->x_zoom), ypos+(IHEIGHT*x->x_zoom)-x->x_zoom,
+                (unsigned long)x, (unsigned long)x);
+        }
+    }
+}
+
+static void note_adjust_justification(t_note *x){
+    if(gobj_shouldvis((t_gobj *)x, x->x_glist) && glist_isvisible(x->x_glist)){
+        int move = 0;
+        if(x->x_textjust && x->x_resized){
+            move = x->x_max_pixwidth - (x->x_text_width / x->x_zoom);
+            if(x->x_textjust == 1) // center
+                move/=2;
+        }
+        if(move){
+            int x1, y1, x2, y2;
+            note_getrect((t_gobj *)x, x->x_glist, &x1, &y1, &x2, &y2);
+            // getrect
+            sys_vgui(".x%lx.c moveto txt%lx  %d %d\n", x->x_cv, (unsigned long)x, x1+move*x->x_zoom, y1);
+        }
+    }
+}
+
+static void note_draw(t_note *x){
+//    post("NOTE DRAW");
     x->x_cv = glist_getcanvas(x->x_glist);
-    if(x->x_bbset && x->x_bg_flag) // draw bg
-        sys_vgui(".x%lx.c create rectangle %d %d %d %d -tags bg%lx -outline %s -fill %s\n",
+    if(x->x_bg_flag && x->x_bbset){ // draw bg only if initialized
+        int x1, y1, x2, y2;
+        note_getrect((t_gobj *)x, x->x_glist, &x1, &y1, &x2, &y2);
+        sys_vgui(".x%lx.c create rectangle %d %d %d %d -tags [list bg%lx all%lx] -outline %s -fill %s\n",
             (unsigned long)x->x_cv,
             text_xpix((t_text *)x, x->x_glist),
             text_ypix((t_text *)x, x->x_glist),
-            x->x_x2 + x->x_zoom * 2,
-            x->x_y2 + x->x_zoom * 2,
-            (unsigned long)x, x->x_bgcolor, x->x_bgcolor);
-    
-/*    t_handle *ch = (t_handle *)x->x_handle;
-    sprintf(ch->h_pathname, ".x%lx.h%lx", (unsigned long)x->x_cv, (unsigned long)ch);
-    sys_vgui(".x%lx.c bind all%lx <ButtonRelease> {pdsend [concat %s _mouserelease \\;]}\n", x->x_cv, x, x->x_bindsym->s_name);*/
-    
-    char buf[COMMENT_OUTBUFSIZE], *outbuf, *outp;
+            x2 + 2*x->x_zoom,
+            y2 + 2*x->x_zoom,
+            (unsigned long)x,
+            (unsigned long)x,
+            x->x_outline ? "black" : x->x_bgcolor,
+            x->x_bgcolor);
+    }
+    char buf[NOTE_OUTBUFSIZE], *outbuf, *outp;
     outp = outbuf = buf;
     sprintf(outp, "%s %s .x%lx.c txt%lx all%lx %d %d {%s} -%d %s {%.*s} %d %s %s %s\n",
-        x->x_underline ? "comment_draw_ul" : "comment_draw",
+        x->x_underline ? "note_draw_ul" : "note_draw",
         x->x_bindsym->s_name, // %s
         (unsigned long)x->x_cv, // .x%lx.c
         (unsigned long)x, // txt%lx
@@ -209,11 +239,11 @@ static void comment_draw(t_comment *x){
         text_xpix((t_text *)x, x->x_glist) + x->x_zoom, // %d
         text_ypix((t_text *)x, x->x_glist) + x->x_zoom, // %d
         x->x_fontname->s_name, // {%s}
-        x->x_fontsize, // -%d
+        x->x_fontsize * x->x_zoom, // -%d
         x->x_select ? "blue" : x->x_color, // %s
         x->x_bufsize, // %.
         x->x_buf, // *s
-        x->x_max_pixwidth, // %d
+        x->x_max_pixwidth * x->x_zoom, // %d
         x->x_bold ? "bold" : "normal",
         x->x_italic ? "italic" : "roman", //
         x->x_textjust == 0 ? "left" : x->x_textjust == 1 ? "center" : "right");
@@ -221,20 +251,25 @@ static void comment_draw(t_comment *x){
     sys_gui(outbuf);
     if(outbuf != buf)
         freebytes(outbuf, x->x_bufsize);
-    comment_draw_inlet(x);
-    comment_draw_outline(x);
+    note_draw_handle(x); // fix weird bug????
+    note_draw_inlet(x);
+    note_draw_outline(x);
+    note_adjust_justification(x);
 }
 
-static void comment_update(t_comment *x){
-//    post("comment_update");
-    char buf[COMMENT_OUTBUFSIZE], *outbuf, *outp;
+static void note_update(t_note *x){
+//    post("update");
+    char buf[NOTE_OUTBUFSIZE], *outbuf, *outp;
     unsigned long cv = (unsigned long)x->x_cv;
     outp = outbuf = buf;
-    sprintf(outp, "comment_update .x%lx.c txt%lx {%.*s} %d\n", cv, (unsigned long)x,
-        x->x_bufsize, x->x_buf, x->x_max_pixwidth);
+    sprintf(outp, "note_update .x%lx.c txt%lx {%.*s} %d\n",
+        cv,
+        (unsigned long)x,
+        x->x_bufsize,
+        x->x_buf,
+        x->x_max_pixwidth * x->x_zoom);
     outp += strlen(outp);
     if(x->x_active){
-//        post("comment_update && x->x_active");
         if(x->x_selend > x->x_selstart){ // <= TEXT SELECTION!!!!
             sprintf(outp, ".x%lx.c select from txt%lx %d\n", cv, (unsigned long)x, x->x_start_ndx);
             outp += strlen(outp);
@@ -251,91 +286,78 @@ static void comment_update(t_comment *x){
         }
         outp += strlen(outp);
     }
-    sprintf(outp, "comment_bbox %s .x%lx.c txt%lx\n",
-        x->x_bindsym->s_name, cv, (unsigned long)x);
+    sprintf(outp, "note_bbox %s .x%lx.c txt%lx\n", x->x_bindsym->s_name, cv, (unsigned long)x);
     x->x_bbpending = 1;
     sys_gui(outbuf);
     if(outbuf != buf)
         freebytes(outbuf, x->x_bufsize);
-//    post("updated");
+    note_adjust_justification(x);
 }
 
-static void comment_erase(t_comment *x){
-    sys_vgui(".x%lx.c delete bg%lx\n", x->x_cv, (unsigned long)x);
+static void note_erase(t_note *x){
     sys_vgui(".x%lx.c delete all%lx\n", x->x_cv, (unsigned long)x);
-    sys_vgui(".x%lx.c delete %lx_outline\n", x->x_cv, (unsigned long)x);
-    sys_vgui(".x%lx.c delete %lx_in\n", x->x_cv, (unsigned long)x);
+    sys_vgui("destroy %s\n", ((t_handle *)x->x_handle)->h_pathname);
 }
 
-static void comment_redraw(t_comment *x){ // <= improve, not necessary for all cases
-     if(glist_isvisible(x->x_glist) && gobj_shouldvis((t_gobj *)x, x->x_glist)){
-         comment_erase(x);
-         comment_draw(x);
-         comment_update(x); // ???????
-     }
+static void note_redraw(t_note *x){ // <= improve, not necessary for all cases
+    if(glist_isvisible(x->x_glist) && gobj_shouldvis((t_gobj *)x, x->x_glist)){
+        note_erase(x);
+        note_draw(x);
+    }
 }
 
-static void comment_grabbedkey(void *z, t_floatarg f){
+static void note_grabbedkey(void *z, t_floatarg f){
     z = NULL, f = 0; // LATER think about replacing #key binding to float method with "grabbing"
 }
 
-static void comment_dograb(t_comment *x){
+static void note_dograb(t_note *x){
 //    post("do grab");
 // LATER investigate grab feature. Used here to prevent backspace erasing text.
 // Done also when already active, because after clicked we lost our previous grab.
-    glist_grab(x->x_glist, (t_gobj *)x, 0, comment_grabbedkey, 0, 0);
+    glist_grab(x->x_glist, (t_gobj *)x, 0, (t_glistkeyfn)note_grabbedkey, 0, 0);
 }
 
-static void comment_getrect(t_gobj *z, t_glist *glist, int *xp1, int *yp1, int *xp2, int *yp2){
-    t_comment *x = (t_comment *)z;
+static void note_getrect(t_gobj *z, t_glist *glist, int *xp1, int *yp1, int *xp2, int *yp2){
+    t_note *x = (t_note *)z;
     float x1, y1, x2, y2;
     x1 = text_xpix((t_text *)x, glist);
     y1 = text_ypix((t_text *)x, glist);
-    int width = x->x_x2 - x->x_x1;
-    int height = x->x_y2 - x->x_y1;
-    if(width < 2)
-        width = 2;
-    if(height < 2)
-        height = 2;
-//    post("width (%d) height (%d)", width, height);
-    x2 = x1 + width;
-    y2 = y1 + height;
+    if(x->x_resized)
+        x->x_width = x->x_max_pixwidth * x->x_zoom;
+    int min_size = NOTE_MINSIZE;
+    if(x->x_width < min_size)
+        x->x_width = min_size;
+    if(x->x_height < min_size)
+        x->x_height = min_size;
+    x2 = x1 + x->x_width;
+    y2 = y1 + x->x_height;
     *xp1 = x1;
     *yp1 = y1;
     *xp2 = x2;
     *yp2 = y2;
-//    post("getrect x1 (%g) x2 (%g) y1(%g) y2(%g)", x1, x2, y1, y2);
+//    post("getrect x1(%g) x2(%g) y1(%g) y2(%g) | width(%d) height(%d)", x1, x2, y1, y2, x->x_width, x->x_height);
 }
 
-static void comment_displace(t_gobj *z, t_glist *glist, int dx, int dy){
+static void note_displace(t_gobj *z, t_glist *glist, int dx, int dy){
     glist = NULL;
-    t_comment *x = (t_comment *)z;
-    if(!x->x_active && !x->x_dragon){  // LATER rethink
+    t_note *x = (t_note *)z;
+    if(!x->x_active && !x->x_dragon){  // ???
         t_text *t = (t_text *)z;
-        t->te_xpix += dx;
-        t->te_ypix += dy;
-        x->x_x1 += dx;
-        x->x_y1 += dy;
-        x->x_x2 += dx;
-        x->x_y2 += dy;
-        sys_vgui(".x%lx.c move all%lx %d %d\n", x->x_cv, (unsigned long)x,
-            dx*x->x_zoom, dy*x->x_zoom);
-        sys_vgui(".x%lx.c move %lx_outline %d %d\n", x->x_cv, (unsigned long)x,
-            dx*x->x_zoom, dy*x->x_zoom);
-        sys_vgui(".x%lx.c move bg%lx %d %d\n", x->x_cv, (unsigned long)x,
-            dx*x->x_zoom, dy*x->x_zoom);
-        if(x->x_receive == &s_)
-            sys_vgui(".x%lx.c move %lx_in %d %d\n", x->x_cv, x, dx*x->x_zoom, dy*x->x_zoom);
+        t->te_xpix += dx, x->x_x1 += dx, x->x_x2 += dx;
+        t->te_ypix += dy, x->x_y1 += dy, x->x_y2 += dy;
+        sys_vgui(".x%lx.c move all%lx %d %d\n",
+            x->x_cv, (unsigned long)x,
+            dx*x->x_zoom,
+            dy*x->x_zoom);
         canvas_fixlinesfor(x->x_cv, t);
     }
 }
 
-static void comment_activate(t_gobj *z, t_glist *glist, int state){
-//   post("comment_activate = %d", state);
+static void note_activate(t_gobj *z, t_glist *glist, int state){
     glist = NULL;
-    t_comment *x = (t_comment *)z;
+    t_note *x = (t_note *)z;
     if(state){
-        comment_dograb(x);
+        note_dograb(x);
         if(x->x_active)
             return;
         sys_vgui(".x%lx.c focus txt%lx\n", x->x_cv, (unsigned long)x);
@@ -354,14 +376,14 @@ static void comment_activate(t_gobj *z, t_glist *glist, int state){
         sys_vgui(".x%lx.c focus {}\n", x->x_cv);
         x->x_active = 0;
     }
-    comment_update(x);
+    note_update(x);
 }
 
-static void comment_select(t_gobj *z, t_glist *glist, int state){
-    t_comment *x = (t_comment *)z;
+static void note_select(t_gobj *z, t_glist *glist, int state){
+    t_note *x = (t_note *)z;
     x->x_select = state;
     if(!state && x->x_active)
-        comment_activate(z, glist, 0);
+        note_activate(z, glist, 0);
     sys_vgui(".x%lx.c itemconfigure txt%lx -fill %s\n", x->x_cv, (unsigned long)x, state ? "blue" : x->x_color);
     sys_vgui(".x%lx.c itemconfigure %lx_outline -width %d -outline %s\n",
         x->x_cv, (unsigned long)x, x->x_zoom, state ? "blue" : "black");
@@ -369,91 +391,77 @@ static void comment_select(t_gobj *z, t_glist *glist, int state){
 // we get keys via global binding to "#key" (and coz 'canvas_editing' isn't exported).
 }
 
-static void comment_delete(t_gobj *z, t_glist *glist){
+static void note_delete(t_gobj *z, t_glist *glist){
     canvas_deletelinesfor(glist, (t_text *)z);
 }
 
-static void comment_vis(t_gobj *z, t_glist *glist, int vis){
-    t_comment *x = (t_comment *)z;
+static void note_vis(t_gobj *z, t_glist *glist, int vis){
+//    post("VIS = %d", vis);
+    t_note *x = (t_note *)z;
     x->x_cv = glist_getcanvas(x->x_glist = glist);
     if(!x->x_init)
-        comment_initialize(x);
+        note_initialize(x);
     if(vis){
         t_handle *ch = (t_handle *)x->x_handle;
         sprintf(ch->h_pathname, ".x%lx.h%lx", (unsigned long)x->x_cv, (unsigned long)ch);
-//        sys_vgui(".x%lx.c bind all%lx <ButtonRelease> {pdsend [concat %s _mouserelease \\;]}\n", x->x_cv, x, x->x_bindsym->s_name);
-        comment_draw(x);
-        comment_draw_handle(x, x->x_edit);
+        note_draw(x);
     }
     else
-        comment_erase(x);
+        note_erase(x);
 }
 
-static void comment__bbox_callback(t_comment *x, t_symbol *bindsym, t_floatarg x1, t_floatarg y1, t_floatarg x2, t_floatarg y2){
+static void note__bbox_callback(t_note *x, t_symbol *bindsym,
+t_floatarg x1, t_floatarg y1, t_floatarg x2, t_floatarg y2){
     bindsym = NULL;
-//    post("--------comment__bbox_callback--------");
-//    post("x->x_bbset = (%d) / x->x_bbpending (%d)", x->x_bbset, x->x_bbpending);
-    if(x->x_x1 != x1 || x->x_y1 != y1 || x->x_x2 != x2 || x->x_y2 != y2){
-//        post("arg dif");
-//        post("comment__bbox_callback x1 = %g y1 = %g x2 = %g y2 = %g", x1, y1, x2, y2);
-        x->x_x1 = x1;
+    if(!x->x_bbset || (x->x_height != (y2-y1)) || x->x_text_width != (x2-x1)){ // redraw
+        x->x_text_width = x2-x1;
+        x->x_height = y2-y1;
         x->x_y1 = y1;
-        x->x_x2 = x2;
         x->x_y2 = y2;
-        if(!x->x_bbset){
-            x->x_bbset = 1;
-            comment_redraw(x);
+        if(x->x_resized){
+            x->x_width = x->x_max_pixwidth * x->x_zoom;
+            x->x_x2 = x1 + x->x_max_pixwidth * x->x_zoom;
         }
-        if(!glist_isvisible(x->x_glist) || !gobj_shouldvis((t_gobj *)x, x->x_glist))
-           comment_erase(x); // <= improve this hack
-        else{
-            if(x->x_edit)
-                sys_vgui(".x%lx.c coords %lx_outline %d %d %d %d\n", (unsigned long)x->x_cv, x, x->x_x1, x->x_y1, x->x_x2, x->x_y2);
-            if(x->x_bg_flag)
-                sys_vgui(".x%lx.c coords bg%lx %d %d %d %d\n", (unsigned long)x->x_cv, x, x->x_x1, x->x_y1, x->x_x2, x->x_y2);
-        }
+        else
+            x->x_width = x2-x1, x->x_x2 = x2;
+        x->x_x1 = x1;
+        x->x_bbset = 1;
+        note_redraw(x);
     }
     x->x_bbpending = 0;
-    comment_draw_handle(x, x->x_edit);
 }
 
-static void comment__click_callback(t_comment *x, t_symbol *s, int ac, t_atom *av){
-//    post("comment__click_callback");
-    t_symbol *dummy = s;
-    dummy = NULL;
+static void note__click_callback(t_note *x, t_symbol *s, int ac, t_atom *av){
+    s = NULL;
     int xx, ndx;
-    if(ac == 8 && av->a_type == A_SYMBOL && av[1].a_type == A_FLOAT
+    if(ac == 8 && av[0].a_type == A_SYMBOL && av[1].a_type == A_FLOAT
        && av[2].a_type == A_FLOAT && av[3].a_type == A_FLOAT
        && av[4].a_type == A_FLOAT && av[5].a_type == A_FLOAT
        && av[6].a_type == A_FLOAT && av[7].a_type == A_FLOAT){
             xx = (int)av[1].a_w.w_float;
             ndx = (int)av[3].a_w.w_float;
-//            post("xx = %d / yy = %d / ndx = %d", xx, yy, ndx);
-            comment__bbox_callback(x, av->a_w.w_symbol,
-            av[4].a_w.w_float, av[5].a_w.w_float,
-            av[6].a_w.w_float, av[7].a_w.w_float);
+            note__bbox_callback(x, av[0].a_w.w_symbol, av[4].a_w.w_float, av[5].a_w.w_float, av[6].a_w.w_float, av[7].a_w.w_float);
     }
     else{
-//        post("bug [comment]: comment__click_callback");
+        post("bug [note]: note__click_callback");
         return;
     }
-    char buf[COMMENT_OUTBUFSIZE], *outp = buf;
+    char buf[NOTE_OUTBUFSIZE], *outp = buf;
     unsigned long cv = (unsigned long)x->x_cv;
     if(x->x_glist->gl_edit){
         if(x->x_active){
             if(ndx >= 0 && ndx <= x->x_bufsize){
-//                post("ndx = %d", ndx);
                 x->x_start_ndx = x->x_end_ndx = ndx;
                 int byte_ndx = 0;
                 for(int i = 0; i < ndx; i++)
                     u8_inc(x->x_buf, &byte_ndx);
                 x->x_selstart = x->x_selend = byte_ndx;
-                comment_dograb(x);
-                comment_update(x);
+                note_dograb(x);
+                note_update(x);
 // set selection, LATER shift-click and drag
             }
         }
-        else if(xx > x->x_x2 - HANDLE_WIDTH){ // start resizing
+        else if(xx > x->x_x2 - NOTE_HANDLE_WIDTH){ // start resizing
             sprintf(outp, ".x%lx.c bind txt%lx <ButtonRelease> {pdsend {%s _release %s}}\n",
                 cv, (unsigned long)x, x->x_bindsym->s_name, x->x_bindsym->s_name);
             outp += strlen(outp);
@@ -469,53 +477,60 @@ static void comment__click_callback(t_comment *x, t_symbol *s, int ac, t_atom *a
 
 static void handle__click_callback(t_handle *ch, t_floatarg f){
     int click = (int)f;
-    t_comment *x = ch->h_master;
-    if(ch->h_dragon && click == 0){
-        sys_vgui(".x%lx.c delete %s\n", x->x_cv, ch->h_outlinetag);
-        if(x->x_newx2 != x->x_x2){
-            x->x_max_pixwidth = x->x_newx2 - x->x_x1;
-            comment_redraw(x);
+    t_note *x = ch->h_master;
+    if(ch->h_clicked && click == 0){ // Released the handle
+        if(x->x_x2 != x->x_newx2){
+            x->x_resized = 1;
+            x->x_x2 = x->x_newx2;
+            t_atom undo[1];
+            SETFLOAT(undo+0, x->x_max_pixwidth);
+            int pixwidth = (x->x_newx2 - x->x_x1) / x->x_zoom;
+            t_atom redo[1];
+            SETFLOAT(redo+0, pixwidth);
+            pd_undo_set_objectstate(x->x_glist, (t_pd*)x, gensym("width"), 1, undo, 1, redo);
+            if(pixwidth < 8)
+                pixwidth = 8; // min width
+            x->x_changed = 1;
+            x->x_max_pixwidth = pixwidth;
+            x->x_resized = 1;
+            canvas_dirty(x->x_glist, 1);
+            note_redraw(x); // needed to call bbox callback
         }
-        comment_select((t_gobj *)x, x->x_glist, x->x_select);
     }
-    else if(!ch->h_dragon && click){
-        int x1, y1, x2, y2;
-        comment_getrect((t_gobj *)x, x->x_glist, &x1, &y1, &x2, &y2);
-        sys_vgui(".x%lx.c create rectangle %d %d %d %d -outline %s -width %d -tags %s\n",
-            x->x_cv, x1, y1, x2+2*x->x_zoom, y2+2*x->x_zoom, "blue", 2*x->x_zoom, ch->h_outlinetag);
-        ch->h_dragx = 0;
-    }
-    ch->h_dragon = click;
+    if(click)
+        x->x_bbset = 0; // arm bbox callback redraw
+    ch->h_clicked = click;
 }
 
 static void handle__motion_callback(t_handle *ch, t_floatarg f1, t_floatarg f2){
-    if(ch->h_dragon){
-        f2 = 0;
-        t_comment *x = ch->h_master;
-        int dx = (int)f1, x1, y1, x2, y2, newx;
-        comment_getrect((t_gobj *)x, x->x_glist, &x1, &y1, &x2, &y2);
-        newx = x2 + dx;
-        if(newx > x1 + COMMNENT_MINSIZE){
-            sys_vgui(".x%lx.c coords %s %d %d %d %d\n", x->x_cv, ch->h_outlinetag, x1, y1, newx, y2 + 2*x->x_zoom);
+    if(ch->h_clicked){ // dragging handle
+        t_note *x = ch->h_master;
+        int dx = (int)f1;
+        f2 = 0; // avoid warning
+        int x1, y1, x2, y2;
+        note_getrect((t_gobj *)x, x->x_glist, &x1, &y1, &x2, &y2);
+        x->x_x1 = x1, x->x_x2 = x2;
+        x->x_y1 = y1, x->x_y2 = y2;
+        int newx = x2 + dx;
+        if(newx > x1 + NOTE_MINSIZE){ // update outline
             sys_vgui(".x%lx.c coords %lx_outline %d %d %d %d\n", (unsigned long)x->x_cv,
-                (unsigned long)x, x->x_x1, x->x_y1, x->x_newx2 = newx, x->x_y2);
-            ch->h_dragx = dx;
+                (unsigned long)x, x->x_x1, x->x_y1, (x->x_newx2 = newx) + 2*x->x_zoom, x->x_y2 + 2*x->x_zoom);
         }
     }
 }
 
-static void commentsink__bbox_callback(t_pd *x, t_symbol *bindsym){
+static void notesink__bbox_callback(t_pd *x, t_symbol *bindsym){
     if(bindsym->s_thing == x)
-        pd_unbind(x, bindsym);  // if comment gone, unbind
+        pd_unbind(x, bindsym);  // if note gone, unbind
 }
 
-static void commentsink_anything(t_pd *x, t_symbol *s, int ac, t_atom *av){ // nop: avoid warnings
+static void notesink_anything(t_pd *x, t_symbol *s, int ac, t_atom *av){ // nop: avoid warnings
     x = NULL;
     s = NULL;
     ac = (int)av;
 }
 
-static void comment_get_rcv(t_comment* x){
+static void note_get_rcv(t_note* x){
     if(!x->x_rcv_set){ // no receive set, search arguments
         t_binbuf *bb = x->x_obj.te_binbuf;
         int n_args = binbuf_getnatom(bb) - 1, i = 0; // number of arguments
@@ -547,20 +562,20 @@ static void comment_get_rcv(t_comment* x){
         x->x_rcv_raw = gensym("empty");
 }
     
-static void comment_save(t_gobj *z, t_binbuf *b){
-    t_comment *x = (t_comment *)z;
-    if(!x->x_init)
-        comment_initialize(x);
+static void note_save(t_gobj *z, t_binbuf *b){
+    t_note *x = (t_note *)z;
+    if(!x->x_init) // hack???
+        note_initialize(x);
     t_binbuf *bb = x->x_obj.te_binbuf;
-    comment_get_rcv(x);
+    note_get_rcv(x);
     binbuf_addv(b, "ssiisiissiiiiiiiiii",
         gensym("#X"),
         gensym("obj"),
         (int)x->x_obj.te_xpix,
         (int)x->x_obj.te_ypix,
         atom_getsymbol(binbuf_getvec(bb)),
-        x->x_max_pixwidth / x->x_zoom,
-        x->x_fontsize / x->x_zoom,
+        x->x_resized ? x->x_max_pixwidth : 0,
+        x->x_fontsize,
         x->x_fontname,
         x->x_rcv_raw,
         x->x_fontface,
@@ -573,18 +588,18 @@ static void comment_save(t_gobj *z, t_binbuf *b){
         (int)x->x_bg[2],
         x->x_bg_flag,
         x->x_textjust);
-    binbuf_addbinbuf(b, x->x_binbuf); // the actual comment
+    binbuf_addbinbuf(b, x->x_binbuf); // the actual note
     binbuf_addv(b, ";");
 }
 
-static void comment_key(t_comment *x){
+static void note_key(t_note *x){
     if(!x->x_active){
         post("key bug");
         return;
     }
     int i, newsize, ndel, n = x->x_keynum;
     if(n){
-    //        post("comment_float => input character = [%c], n = %d", n, n);
+//        post("note_float => input character = [%c], n = %d", n, n);
         if (n == '\r')
             n = '\n';
         if (n == '\b'){  // backspace
@@ -710,15 +725,15 @@ static void comment_key(t_comment *x){
     canvas_dirty(x->x_glist, 1);
     binbuf_text(x->x_binbuf, x->x_buf, x->x_bufsize);
 //        post("x->x_selend = x->x_selstart = %d", x->x_selend);
-    comment_update(x);
+    note_update(x);
 }
 
-static void comment_float(t_comment *x, t_float f){
+static void note_float(t_note *x, t_float f){
     x->x_keynum = (int)f;
 //    post("x->x_keynum = %d", x->x_keynum);
 }
 
-static void comment_list(t_comment *x, t_symbol *s, int ac, t_atom *av){
+static void note_list(t_note *x, t_symbol *s, int ac, t_atom *av){
     t_symbol *dummy = s;
     dummy = NULL;
     if(ac > 1 && av->a_type == A_FLOAT && av[1].a_type == A_SYMBOL){
@@ -730,7 +745,7 @@ static void comment_list(t_comment *x, t_symbol *s, int ac, t_atom *av){
         }
         if(press){
             x->x_keysym = av[1].a_w.w_symbol;
-            comment_key(x);
+            note_key(x);
         }
     }
 }
@@ -751,24 +766,27 @@ static void edit_proxy_any(t_edit_proxy *p, t_symbol *s, int ac, t_atom *av){
             return;
         if(p->p_cnv->x_edit != edit){
             p->p_cnv->x_edit = edit;
-            t_canvas *cv = glist_getcanvas(p->p_cnv->x_glist);
-            unsigned long x = (unsigned long)p->p_cnv;
-            comment_draw_handle(p->p_cnv, edit);
             if(edit){
-//                sys_vgui(".x%lx.c itemconfigure txt%lx -cursor xterm\n", p->p_cnv->x_cv, (unsigned long)x);
-                comment_draw_inlet(p->p_cnv);
-                comment_draw_outline(p->p_cnv);
+                note_draw_handle(p->p_cnv); // fix weird bug????
+                note_draw_inlet(p->p_cnv);
+                if(!p->p_cnv->x_outline)
+                    note_draw_outline(p->p_cnv);
             }
             else{
+                t_canvas *cv = glist_getcanvas(p->p_cnv->x_glist);
+                t_handle *ch = (t_handle *)p->p_cnv->x_handle;
+                unsigned long x = (unsigned long)p->p_cnv;
                 sys_vgui(".x%lx.c delete %lx_in\n", cv, x);
-                sys_vgui(".x%lx.c delete %lx_outline\n", cv, x);
+                if(!p->p_cnv->x_outline)
+                    sys_vgui(".x%lx.c delete %lx_outline\n", cv, x);
+                sys_vgui("destroy %s\n", ch->h_pathname); // always destroy, bad hack, improve
             }
         }
     }
 }
 
 //---------------------------- METHODS ----------------------------------------
-static void comment_receive(t_comment *x, t_symbol *s){
+static void note_receive(t_note *x, t_symbol *s){
     if(s == gensym(""))
         s = gensym("empty");
     t_symbol *rcv = s == gensym("empty") ? &s_ : canvas_realizedollar(x->x_glist, s);
@@ -780,8 +798,8 @@ static void comment_receive(t_comment *x, t_symbol *s){
         x->x_rcv_raw = s;
         x->x_receive = rcv;
         if(x->x_receive == &s_){
-            if(x->x_edit && glist_isvisible(x->x_glist) && gobj_shouldvis((t_gobj *)x, x->x_glist))
-                comment_draw_inlet(x);
+            if(x->x_edit)
+                note_draw_inlet(x);
         }
         else{
             pd_bind(&x->x_obj.ob_pd, x->x_receive);
@@ -791,18 +809,20 @@ static void comment_receive(t_comment *x, t_symbol *s){
     }
 }
 
-static void comment_set(t_comment *x, t_symbol *s, int ac, t_atom * av){
+static void note_set(t_note *x, t_symbol *s, int ac, t_atom * av){
     s = NULL;
+//    post("set");
     binbuf_clear(x->x_binbuf);
     binbuf_restore(x->x_binbuf, ac, av);
     binbuf_gettext(x->x_binbuf, &x->x_buf, &x->x_bufsize);
-    comment_redraw(x);
+    x->x_bbset = 0;
+    note_redraw(x);
 }
 
-static void comment_append(t_comment *x, t_symbol *s, int ac, t_atom * av){
+static void note_append(t_note *x, t_symbol *s, int ac, t_atom * av){
     s = NULL;
-    if(!x->x_init)
-        comment_initialize(x);
+    if(!x->x_init) // hack???
+        note_initialize(x);
     if(ac){
         int n = binbuf_getnatom(x->x_binbuf); // number of arguments
         t_atom* at = (t_atom *)getbytes((n+ac)*sizeof(t_atom));
@@ -817,15 +837,17 @@ static void comment_append(t_comment *x, t_symbol *s, int ac, t_atom * av){
         binbuf_clear(x->x_binbuf);
         binbuf_restore(x->x_binbuf, n+ac, at);
         binbuf_gettext(x->x_binbuf, &x->x_buf, &x->x_bufsize);
-        comment_redraw(x);
+        x->x_bbset = 0;
+        note_redraw(x);
         freebytes(at, (n+ac)*sizeof(t_atom));
     }
 }
 
-static void comment_prepend(t_comment *x, t_symbol *s, int ac, t_atom * av){
+static void note_prepend(t_note *x, t_symbol *s, int ac, t_atom * av){
+//    post("prepend");
     s = NULL;
-    if(!x->x_init)
-        comment_initialize(x);
+    if(!x->x_init) // hack???
+        note_initialize(x);
     if(ac){
         int n = binbuf_getnatom(x->x_binbuf); // number of arguments
         t_atom* at = (t_atom *)getbytes((n+ac)*sizeof(t_atom));
@@ -840,12 +862,13 @@ static void comment_prepend(t_comment *x, t_symbol *s, int ac, t_atom * av){
         binbuf_clear(x->x_binbuf);
         binbuf_restore(x->x_binbuf, n+ac, at);
         binbuf_gettext(x->x_binbuf, &x->x_buf, &x->x_bufsize);
-        comment_redraw(x);
+        x->x_bbset = 0;
+        note_redraw(x);
         freebytes(at, (n+ac)*sizeof(t_atom));
     }
 }
 
-static void comment_textcolor(t_comment *x, t_floatarg r, t_floatarg g, t_floatarg b){
+static void note_textcolor(t_note *x, t_floatarg r, t_floatarg g, t_floatarg b){
     unsigned char red = r < 0 ? 0 : r > 255 ? 255 : (unsigned char)r;
     unsigned char green = g < 0 ? 0 : g > 255 ? 255 : (unsigned char)g;
     unsigned char blue = b < 0 ? 0 : b > 255 ? 255 : (unsigned char)b;
@@ -856,116 +879,187 @@ static void comment_textcolor(t_comment *x, t_floatarg r, t_floatarg g, t_floata
     }
 }
 
-static void comment_bgcolor(t_comment *x, t_float r, t_float g, t_float b, t_float flag){
-    unsigned int red = r < 0 ? 0 : r > 255 ? 255 : (unsigned int)r;
-    unsigned int green = g < 0 ? 0 : g > 255 ? 255 : (unsigned int)g;
-    unsigned int blue = b < 0 ? 0 : b > 255 ? 255 : (unsigned int)b;
-    if(!x->x_bg_flag && flag){
+static void note_bgcolor(t_note *x, t_float r, t_float g, t_float b){
+    unsigned char red = r < 0 ? 0 : r > 255 ? 255 : (unsigned char)r;
+    unsigned char green = g < 0 ? 0 : g > 255 ? 255 : (unsigned char)g;
+    unsigned char blue = b < 0 ? 0 : b > 255 ? 255 : (unsigned char)b;
+    if(!x->x_bg_flag){
         x->x_bg_flag = 1;
         sprintf(x->x_bgcolor, "#%2.2x%2.2x%2.2x", x->x_bg[0] = red, x->x_bg[1] = green, x->x_bg[2] = blue);
-        comment_redraw(x);
+        x->x_bbset = 0;
+        note_redraw(x); // why redraw???
     }
     else if(x->x_bg[0] != red || x->x_bg[1] != green || x->x_bg[2] != blue){
         sprintf(x->x_bgcolor, "#%2.2x%2.2x%2.2x", x->x_bg[0] = red, x->x_bg[1] = green, x->x_bg[2] = blue);
         if(gobj_shouldvis((t_gobj *)x, x->x_glist) && glist_isvisible(x->x_glist))
-            sys_vgui(".x%lx.c itemconfigure bg%lx -fill %s\n", x->x_cv, (unsigned long)x, x->x_bgcolor);
+            sys_vgui(".x%lx.c itemconfigure bg%lx -outline %s -fill %s\n",
+            x->x_cv,
+            (unsigned long)x,
+            x->x_outline ? "black" : x->x_bgcolor,
+            x->x_bgcolor);
     }
 }
 
-static void comment_set_bgcolor(t_comment *x, t_float r, t_float g, t_float b){
-    comment_bgcolor(x, r, g, b, 1);
-}
-
-static void comment_fontname(t_comment *x, t_symbol *name){
+static void note_fontname(t_note *x, t_symbol *name){
     if(name != x->x_fontname){
         x->x_fontname = name;
-        comment_redraw(x);
+        x->x_bbset = 0;
+        note_redraw(x);
     }
 }
 
-static void comment_fontsize(t_comment *x, t_floatarg f){
+static void note_fontsize(t_note *x, t_floatarg f){
     int size = (int)f < 5 ? 5 : (int)f;
     if(x->x_fontsize != size){
-        x->x_fontsize = size;
-        comment_redraw(x);
+        x->x_fontsize = size; // * x->x_zoom;
+        x->x_bbset = 0;
+        note_redraw(x);
     }
 }
 
-static void comment_italic(t_comment *x, t_float f){
+static void note_italic(t_note *x, t_float f){
     int italic = f != 0;
     if(italic != x->x_italic){
         x->x_italic = italic;
-        comment_redraw(x);
+        x->x_bbset = 0;
+        note_redraw(x);
+        x->x_fontface = x->x_bold + 2 * x->x_italic + 4 * x->x_outline;
     }
 }
 
-static void comment_bold(t_comment *x, t_float f){
+static void note_bold(t_note *x, t_float f){
     int bold = f != 0;
     if(bold != x->x_bold){
         x->x_bold = bold;
-        comment_redraw(x);
+        x->x_bbset = 0;
+        note_redraw(x);
+        x->x_fontface = x->x_bold + 2 * x->x_italic + 4 * x->x_outline;
     }
 }
 
+static void note_width(t_note *x, t_symbol *s, int ac, t_atom *av){
+    s = NULL;
+    if(ac != 1)
+        return;
+    int width = atom_getintarg(0, ac, av);
+    if(width <= 0){
+        if(x->x_resized){
+            x->x_resized = 0;
+            x->x_max_pixwidth = 425;
+            x->x_width = x->x_text_width; // ????
+            note_redraw(x);
+        }
+    }
+    else{
+        if(width < 8)
+            width = 8; // min width
+        if(x->x_max_pixwidth != width){
+            x->x_max_pixwidth = width;
+            x->x_resized = 1;
+            note_redraw(x);
+        }
+    }
+}
 
-static void comment_bg_flag(t_comment *x, t_float f){
+static void note_outline(t_note *x, t_floatarg outline){
+    if(outline != x->x_outline){
+        x->x_outline = outline;
+        x->x_fontface = x->x_bold + 2 * x->x_italic + 4 * x->x_outline;
+        if(gobj_shouldvis((t_gobj *)x, x->x_glist) && glist_isvisible(x->x_glist)){
+            if(x->x_outline || x->x_edit){
+                note_draw_outline(x);
+                if(x->x_bg_flag)
+                    sys_vgui(".x%lx.c itemconfigure bg%lx -outline black\n", x->x_cv, (unsigned long)x);
+            }
+            else{
+                sys_vgui(".x%lx.c delete %lx_outline\n", (unsigned long)x->x_cv, (unsigned long)x);
+                if(x->x_bg_flag){
+                    sys_vgui(".x%lx.c itemconfigure bg%lx -outline %s\n",
+                    x->x_cv,
+                    (unsigned long)x,
+                    x->x_bgcolor);
+                }
+            }
+        }
+    }
+}
+
+static void note_bg_flag(t_note *x, t_float f){
     int bgflag = (int)(f != 0);
     if(x->x_bg_flag != bgflag){
         x->x_bg_flag = bgflag;
-        comment_redraw(x);
+        x->x_bbset = 0;
+        note_redraw(x);
     }
 }
 
-static void comment_underline(t_comment *x, t_float f){
+static void note_underline(t_note *x, t_float f){
     int underline = (int)(f != 0);
     if(x->x_underline != underline){
         x->x_underline = underline;
-        comment_redraw(x); // itemconfigure?
+        x->x_bbset = 0;
+        note_redraw(x); // itemconfigure?
     }
 }
 
-static void comment_just(t_comment *x, t_float f){
+static void note_just(t_note *x, t_float f){
     int just = f < 0 ? 0 : (f > 2 ? 2 : (int)f);
     if(just != x->x_textjust){
         x->x_textjust = just;
-        comment_redraw(x); // itemconfigure?
+        x->x_bbset = 0;
+        note_redraw(x); // itemconfigure?
     }
 }
 
-static void comment_zoom(t_comment *x, t_floatarg zoom){
+static void note_zoom(t_note *x, t_floatarg zoom){
     x->x_zoom = (int)zoom;
-    float mul = zoom == 1. ? 0.5 : 2.;
-    x->x_max_pixwidth = (int)((float)x->x_max_pixwidth * mul);
-    float fontsize = (float)x->x_fontsize * mul;
-    comment_fontsize(x, fontsize);
+    note_redraw(x);
 }
 
 //------------------- Properties --------------------------------------------------------
-void comment_properties(t_gobj *z, t_glist *gl){
-//    post("properties");
-    comment_select(z, gl, 0);
-    t_comment *x = (t_comment *)z;
-    comment_get_rcv(x);
+void note_properties(t_gobj *z, t_glist *gl){
+    note_select(z, gl, 0);
+    t_note *x = (t_note *)z;
+    note_get_rcv(x);
     char buffer[512];
-    sprintf(buffer, "comment_properties %%s {%s} %d %d %d %d %d {%s} %d %d %d %d %d %d \n",
+    sprintf(buffer, "note_properties %%s {%s} %d %d %d %d %d %d %d {%s} {%s} {%s} %d \n",
         x->x_fontname->s_name,
         x->x_fontsize,
-        x->x_fontface,
+        x->x_resized ? x->x_max_pixwidth : 0,
+        x->x_bold,
+        x->x_italic,
         x->x_textjust,
         x->x_underline,
         x->x_bg_flag,
         x->x_rcv_raw->s_name,
-        x->x_bg[0],
-        x->x_bg[1],
-        x->x_bg[2],
-        x->x_red,
-        x->x_green,
-        x->x_blue);
+        x->x_bgcolor,
+        x->x_color,
+        x->x_outline);
     gfxstub_new(&x->x_obj.ob_pd, x, buffer);
 }
 
-static void comment_ok(t_comment *x, t_symbol *s, int ac, t_atom *av){
-    s = NULL;
+static void note_ok(t_note *x, t_symbol *s, int ac, t_atom *av){
+    s = NULL; // received when applying changes in properties
+    t_atom undo[11];
+    SETSYMBOL(undo+0, x->x_fontname);
+    SETFLOAT(undo+1, x->x_fontsize);
+    SETFLOAT(undo+2, x->x_max_pixwidth);
+    SETFLOAT(undo+3, x->x_bold);
+    SETFLOAT(undo+4, x->x_italic);
+    t_symbol *justification = NULL;
+    if(x->x_textjust == 0)
+        justification = gensym("Left");
+    else if(x->x_textjust == 1)
+        justification = gensym("Center");
+    else if(x->x_textjust == 1)
+        justification = gensym("Right");
+    SETSYMBOL(undo+5, justification);
+    SETFLOAT(undo+6, x->x_underline);
+    SETFLOAT(undo+7, x->x_bg_flag);
+    SETSYMBOL(undo+8, gensym(x->x_bgcolor));
+    SETSYMBOL(undo+9, gensym(x->x_color));
+    SETFLOAT(undo+10, x->x_outline);
+    pd_undo_set_objectstate(x->x_glist, (t_pd*)x, gensym("ok"), 11, undo, ac, av);
     x->x_changed = 0;
     t_float temp_f;
     if(atom_getsymbolarg(0, ac, av) != x->x_fontname){
@@ -979,55 +1073,90 @@ static void comment_ok(t_comment *x, t_symbol *s, int ac, t_atom *av){
         x->x_changed = 1;
         x->x_fontsize = (int)temp_f;
     }
-    temp_f = atom_getfloatarg(2, ac, av);
-    int face = temp_f < 0 ? 0 : temp_f > 3 ? 3  : (int)temp_f;
-    if(face != x->x_fontface){
-        x->x_changed = 1;
-        x->x_fontface = face;
-        x->x_bold = x->x_fontface == 1 || x->x_fontface == 3;
-        x->x_italic = x->x_fontface > 1;
+    int width = atom_getfloatarg(2, ac, av);
+    if(width <= 0){
+        if(x->x_resized){
+            x->x_changed = 1;
+            x->x_resized = 0;
+            x->x_max_pixwidth = 425;
+            x->x_width = x->x_text_width;
+        }
     }
-    temp_f = atom_getfloatarg(3, ac, av);
-    int just = temp_f < 0 ? 0 : (temp_f > 2 ? 2 : (int)temp_f);
+    else{
+        if(width < 8)
+            width = 8; // min width
+        if(x->x_max_pixwidth != width){
+            x->x_changed = 1;
+            x->x_max_pixwidth = width;
+            x->x_resized = 1;
+        }
+    }
+    int bold = atom_getfloatarg(3, ac, av);
+    if(bold != x->x_bold){
+        x->x_changed = 1;
+        x->x_bold = bold;
+    }
+    int italic = atom_getfloatarg(4, ac, av);
+    if(italic != x->x_italic){
+        x->x_changed = 1;
+        x->x_italic = italic;
+    }
+    t_symbol* just_sym = atom_getsymbolarg(5, ac, av);
+    int just = 0;
+    if(!strcmp(just_sym->s_name, "Center")) just = 1;
+    if(!strcmp(just_sym->s_name, "Right")) just = 2;
     if(just != x->x_textjust){
         x->x_changed = 1;
         x->x_textjust = just;
     }
-    int underline = (int)(atom_getfloatarg(4, ac, av) != 0);
+    int underline = (int)(atom_getfloatarg(6, ac, av) != 0);
     if(x->x_underline != underline){
         x->x_changed = 1;
         x->x_underline = underline;
     }
-    int bgflag = (int)(atom_getfloatarg(5, ac, av) != 0);
+    int bgflag = (int)(atom_getfloatarg(7, ac, av) != 0);
     if(x->x_bg_flag != bgflag){
         x->x_bg_flag = bgflag;
         x->x_changed = 1;
     }
-    temp_f = atom_getfloatarg(6, ac, av);
-    unsigned int bgr = temp_f < 0 ? 0 : temp_f > 255 ? 255 : (unsigned int)temp_f;
-    temp_f = atom_getfloatarg(7, ac, av);
-    unsigned int bgg = temp_f < 0 ? 0 : temp_f > 255 ? 255 : (unsigned int)temp_f;
-    temp_f = atom_getfloatarg(8, ac, av);
-    unsigned int bgb = temp_f < 0 ? 0 : temp_f > 255 ? 255 : (unsigned int)temp_f;
-    if(x->x_bg[0] != bgr || x->x_bg[1] != bgg || x->x_bg[2] != bgb){
+    t_symbol* bg_color = atom_getsymbolarg(8, ac, av);
+    if(strcmp(x->x_bgcolor, bg_color->s_name)){
+        strcpy(x->x_bgcolor, bg_color->s_name);
         x->x_changed = 1;
-        sprintf(x->x_bgcolor, "#%2.2x%2.2x%2.2x", x->x_bg[0] = bgr, x->x_bg[1] = bgg, x->x_bg[2] = bgb);
+        char* hex = malloc(strlen(bg_color->s_name+1) + 2);
+        char* ptr;
+        strcpy(hex + 2, bg_color->s_name + 1);
+        hex[0] = '0';
+        hex[1] = 'x';
+        long int rgb = strtoll(hex, &ptr, 0);
+        x->x_bg[0] = (char)((rgb >> 16) & 0xFF);
+        x->x_bg[1] = (char)((rgb >> 8) & 0xFF);
+        x->x_bg[2] = (char)((rgb) & 0xFF);
+        free(hex);
     }
-    temp_f = atom_getfloatarg(9, ac, av);
-    unsigned int fgr = temp_f < 0 ? 0 : temp_f > 255 ? 255 : (unsigned int)temp_f;
-    temp_f = atom_getfloatarg(10, ac, av);
-    unsigned int fgg = temp_f < 0 ? 0 : temp_f > 255 ? 255 : (unsigned int)temp_f;
-    temp_f = atom_getfloatarg(11, ac, av);
-    unsigned int fgb = temp_f < 0 ? 0 : temp_f > 255 ? 255 : (unsigned int)temp_f;
-    if(x->x_red != fgr || x->x_green != fgg || x->x_blue != fgb){
+    t_symbol *fg_color = atom_getsymbolarg(9, ac, av);
+    if(strcmp(x->x_color, fg_color->s_name)){
+        strcpy(x->x_color, fg_color->s_name);
         x->x_changed = 1;
-        sprintf(x->x_color, "#%2.2x%2.2x%2.2x", x->x_red = fgr, x->x_green = fgg, x->x_blue = fgb);
+        char* hex = malloc(strlen(fg_color->s_name+1) + 2);
+        char* ptr;
+        strcpy(hex + 2, fg_color->s_name + 1);
+        hex[0] = '0';
+        hex[1] = 'x';
+        long int rgb = strtoll(hex, &ptr, 0);
+        x->x_red = (char)((rgb >> 16) & 0xFF);
+        x->x_green = (char)((rgb >> 8) & 0xFF);
+        x->x_blue = (char)((rgb) & 0xFF);
+        free(hex);
     }
-    comment_receive(x, atom_getsymbolarg(12, ac, av));
+    int outline = atom_getfloatarg(10, ac, av);
+    if(x->x_outline != outline)
+        note_outline(x, outline);
     if(x->x_changed){
         canvas_dirty(x->x_glist, 1);
-        comment_redraw(x);
+        note_redraw(x);
     }
+    x->x_fontface = bold + 2 * italic + 4 * outline;
 }
 
 //-------------------------------------------------------------------------------------
@@ -1037,7 +1166,7 @@ static void edit_proxy_free(t_edit_proxy *p){
     pd_free(&p->p_obj.ob_pd);
 }
 
-static t_edit_proxy *edit_proxy_new(t_comment *x, t_symbol *s){
+static t_edit_proxy *edit_proxy_new(t_note *x, t_symbol *s){
     t_edit_proxy *p = (t_edit_proxy*)pd_new(edit_proxy_class);
     p->p_cnv = x;
     pd_bind(&p->p_obj.ob_pd, p->p_sym = s);
@@ -1045,7 +1174,7 @@ static t_edit_proxy *edit_proxy_new(t_comment *x, t_symbol *s){
     return(p);
 }
 
-static void comment_free(t_comment *x){
+static void note_free(t_note *x){
     if(x->x_active){
         pd_unbind((t_pd *)x, gensym("#key"));
         pd_unbind((t_pd *)x, gensym("#keyname"));
@@ -1055,8 +1184,8 @@ static void comment_free(t_comment *x){
     if(x->x_bindsym){
         pd_unbind((t_pd *)x, x->x_bindsym);
         if(!x->x_bbpending){
-//            post("!x->x_bbpending: pd_unbind(commentsink)");
-            pd_unbind(commentsink, x->x_bindsym);
+//            post("!x->x_bbpending: pd_unbind(notesink)");
+            pd_unbind(notesink, x->x_bindsym);
         }
     }
 //    if(x->x_binbuf) // init?
@@ -1071,16 +1200,15 @@ static void comment_free(t_comment *x){
     gfxstub_deleteforkey(x);
 }
 
-static void *comment_new(t_symbol *s, int ac, t_atom *av){
+static void *note_new(t_symbol *s, int ac, t_atom *av){
     s = NULL;
-    t_comment *x = (t_comment *)pd_new(comment_class);
+    t_note *x = (t_note *)pd_new(note_class);
     x->x_handle = pd_new(handle_class);
     t_handle *ch = (t_handle *)x->x_handle;
     ch->h_master = x;
     char hbuf[64];
     sprintf(hbuf, "_h%lx", (unsigned long)ch);
     pd_bind(x->x_handle, ch->h_bindsym = gensym(hbuf));
-    sprintf(ch->h_outlinetag, "h%lx", (unsigned long)ch);
     t_text *t = (t_text *)x;
     t->te_type = T_TEXT;
     x->x_glist = canvas_getcurrent();
@@ -1091,12 +1219,15 @@ static void *comment_new(t_symbol *s, int ac, t_atom *av){
     x->x_buf = 0;
     x->x_keynum = 0;
     x->x_keysym = NULL;
-    x->x_rcv_set = x->x_flag = x->x_r_flag = x->x_old = x->x_text_n = x->x_text_size = 0;
-    x->x_max_pixwidth = 425;
-    x->x_fontsize = x->x_bbpending = 0;
-    x->x_textjust = x->x_fontface = x->x_bold = x->x_italic = 0;
+    x->x_rcv_set = x->x_flag = x->x_r_flag = 0; // x->x_old = 0;
+    x->x_text_n = x->x_text_size = x->x_text_width = 0;
+    x->x_max_pixwidth = 0;
+    x->x_width = x->x_height = 0;
+    x->x_fontsize = 0;
+    x->x_bbpending = 0;
+    x->x_textjust = x->x_fontface = x->x_bold = x->x_italic = x->x_outline = 0;
     x->x_red = x->x_green = x->x_blue = x->x_bufsize = 0;
-    x->x_bg_flag = x->x_changed = x->x_init = 0;
+    x->x_bg_flag = x->x_changed = x->x_init = x->x_resized = 0;
     x->x_bg[0] = x->x_bg[1] = x->x_bg[2] = 255;
     sprintf(x->x_bgcolor, "#%2.2x%2.2x%2.2x", x->x_bg[0], x->x_bg[1], x->x_bg[2]);
     x->x_bbset = x->x_select = x->x_dragon = x->x_shift = 0;
@@ -1107,14 +1238,14 @@ static void *comment_new(t_symbol *s, int ac, t_atom *av){
     x->x_proxy = edit_proxy_new(x, gensym(buf));
     sprintf(buf, "#%lx", (long)x);
     char symbuf[32];
-    sprintf(symbuf, "comment%lx", (unsigned long)x);
+    sprintf(symbuf, "note%lx", (unsigned long)x);
     x->x_bindsym = gensym(symbuf);
     pd_bind((t_pd *)x, x->x_bindsym);
-    if(!commentsink){
-//        post("new: !commentsink");
-        commentsink = pd_new(commentsink_class);
+    if(!notesink){
+//        post("new: !notesink");
+        notesink = pd_new(notesink_class);
     }
-    pd_bind(commentsink, x->x_bindsym);
+    pd_bind(notesink, x->x_bindsym);
     x->x_binbuf = binbuf_new();
     t_atom at;
     SETSYMBOL(&at, gensym("note"));
@@ -1168,7 +1299,6 @@ static void *comment_new(t_symbol *s, int ac, t_atom *av){
                                                             if(ac && av->a_type == A_FLOAT){ // 14th Justification
                                                                 int textjust = (int)(av->a_w.w_float);
                                                                 x->x_textjust = textjust < 0 ? 0 : textjust > 2 ? 2 : textjust;
-                                                                ac--, av++;
                                                             }
                                                         }
                                                     }
@@ -1183,8 +1313,8 @@ static void *comment_new(t_symbol *s, int ac, t_atom *av){
                 }
             }
         }
-        else{ // 1st is not a float, so we must be dealing with attributes!!!
-            int i, comlen = 0; // length of comment list
+        else{ // 1st is not a float, so we must be dealing with attributes/flags!!!
+            int i, comlen = 0; // length of note list
             for(i = 0; i < ac; i++){
                 if(av[i].a_type == A_SYMBOL){
                     t_symbol * sym = av[i].a_w.w_symbol;
@@ -1251,50 +1381,6 @@ static void *comment_new(t_symbol *s, int ac, t_atom *av){
                         else
                             goto errstate;
                     }
-                    else if(sym == gensym("-bold")){
-                        if((ac-i) >= 2){
-                            x->x_flag = 1, i++;
-                            if(av[i].a_type == A_FLOAT)
-                                x->x_bold  = (int)av[i].a_w.w_float != 0;
-                            else
-                                goto errstate;
-                        }
-                        else
-                            goto errstate;
-                    }
-                    else if(sym == gensym("-italic")){
-                        if((ac-i) >= 2){
-                            x->x_flag = 1, i++;
-                            if(av[i].a_type == A_FLOAT)
-                                x->x_italic  = (int)av[i].a_w.w_float != 0;
-                            else
-                                goto errstate;
-                        }
-                        else
-                            goto errstate;
-                    }
-                    else if(sym == gensym("-underline")){
-                        if((ac-i) >= 2){
-                            x->x_flag = 1, i++;
-                            if(av[i].a_type == A_FLOAT)
-                                x->x_underline = (int)(av[i].a_w.w_float != 0);
-                            else
-                                goto errstate;
-                        }
-                        else
-                            goto errstate;
-                    }
-                    else if(sym == gensym("-bg")){
-                        if((ac-i) >= 2){
-                            x->x_flag = 1, i++;
-                            if(av[i].a_type == A_FLOAT)
-                                x->x_bg_flag = (int)(av[i].a_w.w_float != 0);
-                            else
-                                goto errstate;
-                        }
-                        else
-                            goto errstate;
-                    }
                     else if(sym == gensym("-just")){
                         if((ac-i) >= 2){
                             x->x_flag = 1, i++;
@@ -1308,6 +1394,16 @@ static void *comment_new(t_symbol *s, int ac, t_atom *av){
                         else
                             goto errstate;
                     }
+                    else if(sym == gensym("-bold"))
+                        x->x_flag = 1, x->x_bold = 1;
+                    else if(sym == gensym("-italic"))
+                        x->x_flag = 1, x->x_italic = 1;
+                    else if(sym == gensym("-underline"))
+                        x->x_flag = 1, x->x_underline = 1;
+                    else if(sym == gensym("-outline"))
+                        x->x_flag = 1, x->x_outline = 1;
+                    else if(sym == gensym("-bg"))
+                        x->x_flag = 1, x->x_bg_flag = 1;
                     else if(sym == gensym("-note")){
                         if((ac-i) >= 2){
                             x->x_flag = x->x_text_flag = 1;
@@ -1333,13 +1429,16 @@ static void *comment_new(t_symbol *s, int ac, t_atom *av){
     }
     if(x->x_fontsize < 1)
         x->x_fontsize = glist_getfont(x->x_glist);
-    if(x->x_max_pixwidth <= 0)
+    if(x->x_max_pixwidth != 0)
+        x->x_resized = 1;
+    else
         x->x_max_pixwidth = 425;
-    x->x_fontsize *= x->x_zoom;
-    x->x_max_pixwidth *= x->x_zoom;
-    x->x_fontface = x->x_fontface < 0 ? 0 : (x->x_fontface > 3 ? 3 : x->x_fontface);
-    x->x_bold = x->x_fontface == 1 || x->x_fontface == 3;
-    x->x_italic = x->x_fontface > 1;
+    x->x_fontface = x->x_fontface < 0 ? 0 : (x->x_fontface > 7 ? 7 : x->x_fontface);
+    if(x->x_fontface){
+        x->x_bold = x->x_fontface == 1 || x->x_fontface == 3 || x->x_fontface == 5 || x->x_fontface == 7;
+        x->x_italic = x->x_fontface == 2 || x->x_fontface == 3 || x->x_fontface >= 6;
+        x->x_outline = x->x_fontface >= 4;
+    }
     x->x_red = x->x_red > 255 ? 255 : x->x_red < 0 ? 0 : x->x_red;
     x->x_green = x->x_green > 255 ? 255 : x->x_green < 0 ? 0 : x->x_green;
     x->x_blue = x->x_blue > 255 ? 255 : x->x_blue < 0 ? 0 : x->x_blue;
@@ -1353,237 +1452,346 @@ static void *comment_new(t_symbol *s, int ac, t_atom *av){
         pd_bind(&x->x_obj.ob_pd, x->x_receive);
     return(x);
     errstate:
-        pd_error(x, "[comment]: improper creation arguments");
+        pd_error(x, "[note]: improper creation arguments");
         return(NULL);
 }
 
 void note_setup(void){
-    comment_class = class_new(gensym("note"), (t_newmethod)comment_new, (t_method)comment_free,
-        sizeof(t_comment), CLASS_DEFAULT, A_GIMME, 0);
-    class_addfloat(comment_class, comment_float);
-    class_addlist(comment_class, comment_list);
-    class_addmethod(comment_class, (t_method)comment_fontname, gensym("font"), A_SYMBOL, 0);
-    class_addmethod(comment_class, (t_method)comment_receive, gensym("receive"), A_SYMBOL, 0);
-    class_addmethod(comment_class, (t_method)comment_fontsize, gensym("size"), A_FLOAT, 0);
-    class_addmethod(comment_class, (t_method)comment_set, gensym("set"), A_GIMME, 0);
-    class_addmethod(comment_class, (t_method)comment_append, gensym("append"), A_GIMME, 0);
-    class_addmethod(comment_class, (t_method)comment_prepend, gensym("prepend"), A_GIMME, 0);
-    class_addmethod(comment_class, (t_method)comment_bold, gensym("bold"), A_FLOAT, 0);
-    class_addmethod(comment_class, (t_method)comment_italic, gensym("italic"), A_FLOAT, 0);
-    class_addmethod(comment_class, (t_method)comment_underline, gensym("underline"), A_FLOAT, 0);
-    class_addmethod(comment_class, (t_method)comment_just, gensym("just"), A_FLOAT, 0);
-    class_addmethod(comment_class, (t_method)comment_textcolor, gensym("color"), A_FLOAT, A_FLOAT, A_FLOAT, 0);
-    class_addmethod(comment_class, (t_method)comment_bg_flag, gensym("bg"), A_FLOAT, 0);
-    class_addmethod(comment_class, (t_method)comment_set_bgcolor, gensym("bgcolor"), A_FLOAT, A_FLOAT, A_FLOAT, 0);
-    class_addmethod(comment_class, (t_method)comment_zoom, gensym("zoom"), A_CANT, 0);
-    class_addmethod(comment_class, (t_method)comment_ok, gensym("ok"), A_GIMME, 0);
-    class_addmethod(comment_class, (t_method)comment__bbox_callback, gensym("_bbox"), A_SYMBOL, A_FLOAT, A_FLOAT, A_FLOAT, A_FLOAT, 0);
-    class_addmethod(comment_class, (t_method)comment__click_callback, gensym("_click"), A_GIMME, 0);
-    class_setwidget(comment_class, &comment_widgetbehavior);
-    comment_widgetbehavior.w_getrectfn  = comment_getrect;
-    comment_widgetbehavior.w_displacefn = comment_displace;
-    comment_widgetbehavior.w_selectfn   = comment_select;
-    comment_widgetbehavior.w_activatefn = comment_activate;
-    comment_widgetbehavior.w_deletefn   = comment_delete;
-    comment_widgetbehavior.w_visfn      = comment_vis;
-    class_setsavefn(comment_class, comment_save);
-    class_setpropertiesfn(comment_class, comment_properties);
+    note_class = class_new(gensym("note"), (t_newmethod)note_new, (t_method)note_free,
+        sizeof(t_note), CLASS_DEFAULT, A_GIMME, 0);
+    class_addfloat(note_class, note_float);
+    class_addlist(note_class, note_list);
+    class_addmethod(note_class, (t_method)note_width, gensym("width"), A_GIMME, 0);
+    class_addmethod(note_class, (t_method)note_outline, gensym("outline"), A_FLOAT, 0);
+    class_addmethod(note_class, (t_method)note_fontname, gensym("font"), A_SYMBOL, 0);
+    class_addmethod(note_class, (t_method)note_receive, gensym("receive"), A_SYMBOL, 0);
+    class_addmethod(note_class, (t_method)note_fontsize, gensym("size"), A_FLOAT, 0);
+    class_addmethod(note_class, (t_method)note_set, gensym("set"), A_GIMME, 0);
+    class_addmethod(note_class, (t_method)note_append, gensym("append"), A_GIMME, 0);
+    class_addmethod(note_class, (t_method)note_prepend, gensym("prepend"), A_GIMME, 0);
+    class_addmethod(note_class, (t_method)note_bold, gensym("bold"), A_FLOAT, 0);
+    class_addmethod(note_class, (t_method)note_italic, gensym("italic"), A_FLOAT, 0);
+    class_addmethod(note_class, (t_method)note_underline, gensym("underline"), A_FLOAT, 0);
+    class_addmethod(note_class, (t_method)note_just, gensym("just"), A_FLOAT, 0);
+    class_addmethod(note_class, (t_method)note_textcolor, gensym("color"), A_FLOAT, A_FLOAT, A_FLOAT, 0);
+    class_addmethod(note_class, (t_method)note_bgcolor, gensym("bgcolor"), A_FLOAT, A_FLOAT, A_FLOAT, 0);
+    class_addmethod(note_class, (t_method)note_bg_flag, gensym("bg"), A_FLOAT, 0);
+    class_addmethod(note_class, (t_method)note_zoom, gensym("zoom"), A_CANT, 0);
+    class_addmethod(note_class, (t_method)note_ok, gensym("ok"), A_GIMME, 0);
+    class_addmethod(note_class, (t_method)note__bbox_callback, gensym("_bbox"), A_SYMBOL, A_FLOAT, A_FLOAT, A_FLOAT, A_FLOAT, 0);
+    class_addmethod(note_class, (t_method)note__click_callback, gensym("_click"), A_GIMME, 0);
+    class_setwidget(note_class, &note_widgetbehavior);
+    note_widgetbehavior.w_getrectfn  = note_getrect;
+    note_widgetbehavior.w_displacefn = note_displace;
+    note_widgetbehavior.w_selectfn   = note_select;
+    note_widgetbehavior.w_activatefn = note_activate;
+    note_widgetbehavior.w_deletefn   = note_delete;
+    note_widgetbehavior.w_visfn      = note_vis;
+    class_setsavefn(note_class, note_save);
+    class_setpropertiesfn(note_class, note_properties);
     edit_proxy_class = class_new(0, 0, 0, sizeof(t_edit_proxy), CLASS_NOINLET | CLASS_PD, 0);
     class_addanything(edit_proxy_class, edit_proxy_any);
-    commentsink_class = class_new(gensym("_commentsink"), 0, 0, sizeof(t_pd), CLASS_PD, 0);
-    class_addanything(commentsink_class, commentsink_anything);
-    class_addmethod(commentsink_class, (t_method)commentsink__bbox_callback, gensym("_bbox"), A_SYMBOL, 0); // <= ?????
+    notesink_class = class_new(gensym("_notesink"), 0, 0, sizeof(t_pd), CLASS_PD, 0);
+    class_addanything(notesink_class, notesink_anything);
+    class_addmethod(notesink_class, (t_method)notesink__bbox_callback, gensym("_bbox"), A_SYMBOL, 0); // <= ?????
     
     handle_class = class_new(gensym("_handle"), 0, 0, sizeof(t_handle), CLASS_PD, 0);
     class_addmethod(handle_class, (t_method)handle__click_callback, gensym("_click"), A_FLOAT, 0);
     class_addmethod(handle_class, (t_method)handle__motion_callback, gensym("_motion"), A_FLOAT, A_FLOAT, 0);
-    sys_gui("proc comment_bbox {target cvname tag} {\n\
-            pdsend \"$target _bbox $target [$cvname bbox $tag]\"}\n");
+
+  sys_gui("proc note_bbox {target cvname tag} {\n\
+            pdsend \"$target _bbox $target [$cvname bbox $tag]\"}\n"
 // LATER think about window vs canvas coords
-    sys_gui("proc comment_click {target cvname x y tag} {\n\
+            "proc note_click {target cvname x y tag} {\n\
             pdsend \"$target _click $target [$cvname canvasx $x] [$cvname canvasy $y]\
-            [$cvname index $tag @$x,$y] [$cvname bbox $tag]\"}\n");
+            [$cvname index $tag @$x,$y] [$cvname bbox $tag]\"}\n"
     
-    sys_gui("proc comment_update {cv tag tt wd} {\n\
+            "proc note_update {cv tag tt wd} {\n\
             if {$wd > 0} {$cv itemconfig $tag -text $tt -width $wd} else {\n\
-            $cv itemconfig $tag -text $tt}}\n");
-    sys_gui("proc comment_draw {tgt cv tag1 tag2 x y fnm fsz clr tt wd wt sl just} {\n\
+            $cv itemconfig $tag -text $tt}}\n"
+            "proc note_draw {tgt cv tag1 tag2 x y fnm fsz clr tt wd wt sl just} {\n\
             if {$wd > 0} {\n\
             $cv create text $x $y -text $tt -tags [list $tag1 $tag2] \
             -font [list $fnm $fsz $wt $sl] -justify $just -fill $clr -width $wd -anchor nw} else {\n\
             $cv create text $x $y -text $tt -tags [list $tag1 $tag2] \
             -font [list $fnm $fsz $wt $sl] -justify $just -fill $clr -anchor nw}\n\
-            comment_bbox $tgt $cv $tag1\n\
-            $cv bind $tag1 <Button> [list comment_click $tgt %W %x %y $tag1]}\n");
+            note_bbox $tgt $cv $tag1\n\
+            $cv bind $tag1 <Button> [list note_click $tgt %W %x %y $tag1]}\n"
 // later rethink how to make both into a single section:
-    sys_gui("proc comment_draw_ul {tgt cv tag1 tag2 x y fnm fsz clr tt wd wt sl just} {\n\
+            "proc note_draw_ul {tgt cv tag1 tag2 x y fnm fsz clr tt wd wt sl just} {\n\
             if {$wd > 0} {\n\
             $cv create text $x $y -text $tt -tags [list $tag1 $tag2] \
             -font [list $fnm $fsz $wt $sl underline] -justify $just -fill $clr -width $wd -anchor nw} else {\n\
             $cv create text $x $y -text $tt -tags [list $tag1 $tag2] \
             -font [list $fnm $fsz $wt $sl underline] -justify $just -fill $clr -anchor nw}\n\
-            comment_bbox $tgt $cv $tag1\n\
-            $cv bind $tag1 <Button> [list comment_click $tgt %W %x %y $tag1]}\n");
+            note_bbox $tgt $cv $tag1\n\
+            $cv bind $tag1 <Button> [list note_click $tgt %W %x %y $tag1]}\n");
 // properties
-    sys_vgui("if {[catch {pd}]} {\n");
-    sys_vgui("    proc pd {args} {pdsend [join $args \" \"]}\n");
-    sys_vgui("}\n");
-    sys_vgui("proc comment_ok {id} {\n");
-    sys_vgui("    set vid [string trimleft $id .]\n");
-    sys_vgui("    set var_name [concat var_name_$vid]\n");
-    sys_vgui("    set var_size [concat var_size_$vid]\n");
-    sys_vgui("    set var_face [concat var_face_$vid]\n");
-    sys_vgui("    set var_just [concat var_just_$vid]\n");
-    sys_vgui("    set var_underline [concat var_underline_$vid]\n");
-    sys_vgui("    set var_bg_flag [concat var_bg_flag_$vid]\n");
-    sys_vgui("    set var_bgr [concat var_bgr_$vid]\n");
-    sys_vgui("    set var_bgg [concat var_bgg_$vid]\n");
-    sys_vgui("    set var_bgb [concat var_bgb_$vid]\n");
-    sys_vgui("    set var_fgr [concat var_fgr_$vid]\n");
-    sys_vgui("    set var_fgg [concat var_fgg_$vid]\n");
-    sys_vgui("    set var_fgb [concat var_fgb_$vid]\n");
-    sys_vgui("    set var_rcv [concat var_rcv_$vid]\n");
-    sys_vgui("\n");
-    sys_vgui("    global $var_name\n");
-    sys_vgui("    global $var_size\n");
-    sys_vgui("    global $var_face\n");
-    sys_vgui("    global $var_just\n");
-    sys_vgui("    global $var_underline\n");
-    sys_vgui("    global $var_bg_flag\n");
-    sys_vgui("    global $var_bgr\n");
-    sys_vgui("    global $var_bgg\n");
-    sys_vgui("    global $var_bgb\n");
-    sys_vgui("    global $var_fgr\n");
-    sys_vgui("    global $var_fgg\n");
-    sys_vgui("    global $var_fgb\n");
-    sys_vgui("    global $var_rcv\n");
-    sys_vgui("\n");
-    sys_vgui("    set cmd [concat $id ok \\\n");
-    sys_vgui("        [string map {\" \" {\\ } \";\" \"\" \",\" \"\" \"\\\\\" \"\" \"\\{\" \"\" \"\\}\" \"\"} [eval concat $$var_name]] \\\n");
-    sys_vgui("        [eval concat $$var_size] \\\n");
-    sys_vgui("        [eval concat $$var_face] \\\n");
-    sys_vgui("        [eval concat $$var_just] \\\n");
-    sys_vgui("        [eval concat $$var_underline] \\\n");
-    sys_vgui("        [eval concat $$var_bg_flag] \\\n");
-    sys_vgui("        [eval concat $$var_bgr] \\\n");
-    sys_vgui("        [eval concat $$var_bgg] \\\n");
-    sys_vgui("        [eval concat $$var_bgb] \\\n");
-    sys_vgui("        [eval concat $$var_fgr] \\\n");
-    sys_vgui("        [eval concat $$var_fgg] \\\n");
-    sys_vgui("        [eval concat $$var_fgb] \\\n");
-    sys_vgui("        [string map {\"$\" {\\$} \" \" {\\ } \";\" \"\" \",\" \"\" \"\\\\\" \"\" \"\\{\" \"\" \"\\}\" \"\"} [eval concat $$var_rcv]] \\;]\n");
-    sys_vgui("    pd $cmd\n");
-    sys_vgui("    comment_cancel $id\n");
-    sys_vgui("}\n");
-    sys_vgui("proc comment_cancel {id} {\n");
-    sys_vgui("    set cmd [concat $id cancel \\;]\n");
-    sys_vgui("    pd $cmd\n");
-    sys_vgui("}\n");
-    sys_vgui("proc comment_properties {id name size face just underline bg_flag rcv bgr bgg bgb fgr fgg fgb} {\n");
-    sys_vgui("    set vid [string trimleft $id .]\n");
-    sys_vgui("    set var_name [concat var_name_$vid]\n");
-    sys_vgui("    set var_size [concat var_size_$vid]\n");
-    sys_vgui("    set var_face [concat var_face_$vid]\n");
-    sys_vgui("    set var_just [concat var_just_$vid]\n");
-    sys_vgui("    set var_underline [concat var_underline_$vid]\n");
-    sys_vgui("    set var_bg_flag [concat var_bg_flag_$vid]\n");
-    sys_vgui("    set var_rcv [concat var_rcv_$vid]\n");
-    sys_vgui("    set var_bgr [concat var_bgr_$vid]\n");
-    sys_vgui("    set var_bgg [concat var_bgg_$vid]\n");
-    sys_vgui("    set var_bgb [concat var_bgb_$vid]\n");
-    sys_vgui("    set var_fgr [concat var_fgr_$vid]\n");
-    sys_vgui("    set var_fgg [concat var_fgg_$vid]\n");
-    sys_vgui("    set var_fgb [concat var_fgb_$vid]\n");
-    sys_vgui("\n");
-    sys_vgui("    global $var_name\n");
-    sys_vgui("    global $var_size\n");
-    sys_vgui("    global $var_face\n");
-    sys_vgui("    global $var_just\n");
-    sys_vgui("    global $var_underline\n");
-    sys_vgui("    global $var_bg_flag\n");
-    sys_vgui("    global $var_rcv\n");
-    sys_vgui("    global $var_bgr\n");
-    sys_vgui("    global $var_bgg\n");
-    sys_vgui("    global $var_bgb\n");
-    sys_vgui("    global $var_fgr\n");
-    sys_vgui("    global $var_fgg\n");
-    sys_vgui("    global $var_fgb\n");
-    sys_vgui("\n");
-    sys_vgui("    set $var_name [string map {{\\ } \" \"} $name]\n"); // remove escape from space
-    sys_vgui("    set $var_size $size\n");
-    sys_vgui("    set $var_face $face\n");
-    sys_vgui("    set $var_just $just\n");
-    sys_vgui("    set $var_underline $underline\n");
-    sys_vgui("    set $var_bg_flag $bg_flag\n");
-    sys_vgui("    if {$rcv == \"empty\"} {set $var_rcv [format \"\"]} else {set $var_rcv [string map {{\\ } \" \"} $rcv]}\n");
-    sys_vgui("    set $var_bgr $bgr\n");
-    sys_vgui("    set $var_bgg $bgg\n");
-    sys_vgui("    set $var_bgb $bgb\n");
-    sys_vgui("    set $var_fgr $fgr\n");
-    sys_vgui("    set $var_fgg $fgg\n");
-    sys_vgui("    set $var_fgb $fgb\n");
-    sys_vgui("\n");
-    sys_vgui("    toplevel $id\n");
-    sys_vgui("    wm title $id {[comment] Properties}\n");
-    sys_vgui("    wm protocol $id WM_DELETE_WINDOW [concat comment_cancel $id]\n");
-    sys_vgui("\n");
-    sys_vgui("    frame $id.name_size\n");
-    sys_vgui("    pack $id.name_size -side top\n");
-    sys_vgui("    label $id.name_size.lname -text \"Font Name:\"\n");
-    sys_vgui("    entry $id.name_size.name -textvariable $var_name -width 30\n");
-    sys_vgui("    label $id.name_size.lsize -text \"Font Size:\"\n");
-    sys_vgui("    entry $id.name_size.size -textvariable $var_size -width 3\n");
-    sys_vgui("    pack $id.name_size.lname $id.name_size.name $id.name_size.lsize $id.name_size.size -side left\n");
-    sys_vgui("\n");
-    sys_vgui("    frame $id.face_just\n");
-    sys_vgui("    pack $id.face_just -side top\n");
-    sys_vgui("    label $id.face_just.lface -text \"Font Face:\"\n");
-    sys_vgui("    entry $id.face_just.face -textvariable $var_face -width 1\n");
-    sys_vgui("    label $id.face_just.ljust -text \"Justification:\"\n");
-    sys_vgui("    entry $id.face_just.just -textvariable $var_just -width 1\n");
-    sys_vgui("    pack $id.face_just.lface $id.face_just.face $id.face_just.ljust $id.face_just.just -side left\n");
-    sys_vgui("\n");
-    sys_vgui("    frame $id.ul_bg\n");
-    sys_vgui("    pack $id.ul_bg -side top\n");
-    sys_vgui("    label $id.ul_bg.lul -text \"Underline:\"\n");
-    sys_vgui("    checkbutton $id.ul_bg.ul -variable $var_underline \n");
-    sys_vgui("    label $id.ul_bg.lbg -text \"Background:\"\n");
-    sys_vgui("    checkbutton $id.ul_bg.bg -variable $var_bg_flag \n");
-    sys_vgui("    pack $id.ul_bg.lul $id.ul_bg.ul $id.ul_bg.lbg $id.ul_bg.bg -side left\n");
-    sys_vgui("\n");
-    sys_vgui("    frame $id.rcv_sym\n");
-    sys_vgui("    pack $id.rcv_sym -side top\n");
-    sys_vgui("    label $id.rcv_sym.lrcv -text \"Receive symbol:\"\n");
-    sys_vgui("    entry $id.rcv_sym.rcv -textvariable $var_rcv -width 12\n");
-    sys_vgui("    pack $id.rcv_sym.lrcv $id.rcv_sym.rcv -side left\n");
-    sys_vgui("\n");
-// colors
-    sys_vgui("    frame $id.bg\n");
-    sys_vgui("    pack $id.bg -side top\n");
-    sys_vgui("    label $id.bg.lbgr -text \"BG Color: R\"\n");
-    sys_vgui("    entry $id.bg.bgr -textvariable $var_bgr -width 3\n");
-    sys_vgui("    label $id.bg.lbgg -text \"G\"\n");
-    sys_vgui("    entry $id.bg.bgg -textvariable $var_bgg -width 3\n");
-    sys_vgui("    label $id.bg.lbgb -text \"B\"\n");
-    sys_vgui("    entry $id.bg.bgb -textvariable $var_bgb -width 3\n");
-    sys_vgui("    pack $id.bg.lbgr $id.bg.bgr $id.bg.lbgg $id.bg.bgg $id.bg.lbgb $id.bg.bgb -side left\n");
-    sys_vgui("\n");
-    sys_vgui("    frame $id.fg\n");
-    sys_vgui("    pack $id.fg -side top\n");
-    sys_vgui("    label $id.fg.lfgr -text \"Font Color: R\"\n");
-    sys_vgui("    entry $id.fg.fgr -textvariable $var_fgr -width 3\n");
-    sys_vgui("    label $id.fg.lfgg -text \"G\"\n");
-    sys_vgui("    entry $id.fg.fgg -textvariable $var_fgg -width 3\n");
-    sys_vgui("    label $id.fg.lfgb -text \"B\"\n");
-    sys_vgui("    entry $id.fg.fgb -textvariable $var_fgb -width 3\n");
-    sys_vgui("    pack $id.fg.lfgr $id.fg.fgr $id.fg.lfgg $id.fg.fgg $id.fg.lfgb $id.fg.fgb -side left\n");
-    sys_vgui("\n");
-    
-    sys_vgui("    frame $id.buttonframe\n");
-    sys_vgui("    pack $id.buttonframe -side bottom -fill x -pady 2m\n");
-    sys_vgui("    button $id.buttonframe.cancel -text {Cancel} -command \"comment_cancel $id\"\n");
-    sys_vgui("    button $id.buttonframe.ok -text {OK} -command \"comment_ok $id\"\n");
-    sys_vgui("    pack $id.buttonframe.cancel -side left -expand 1\n");
-    sys_vgui("    pack $id.buttonframe.ok -side left -expand 1\n");
-    sys_vgui("}\n");
+    sys_vgui("if {[catch {pd}]} {\n"
+    "    proc pd {args} {pdsend [join $args \" \"]}\n"
+    "}\n"
+    "proc note_ok {id} {\n"
+    "    note_apply $id\n"
+    "    note_cancel $id\n"
+    "}\n"
+    "proc note_apply {id} {\n"
+             "    set vid [string trimleft $id .]\n"
+             "    set var_name [concat var_name_$vid]\n"
+             "    set var_size [concat var_size_$vid]\n"
+             "    set var_bold [concat var_bold_$vid]\n"
+             "    set var_italic [concat var_italic_$vid]\n"
+             "    set var_just [concat var_just_$vid]\n"
+             "    set var_underline [concat var_underline_$vid]\n"
+             "    set var_bg_flag [concat var_bg_flag_$vid]\n"
+             "    set var_bg [concat var_bg_$vid]\n"
+             "    set var_fg [concat var_fg_$vid]\n"
+             "    set var_outline [concat var_outline_$vid]\n"
+             "    set var_rcv [concat var_rcv_$vid]\n"
+             "    set var_wdt [concat var_wdt_$vid]\n"
+             "\n"
+             "    global $var_name\n"
+             "    global $var_size\n"
+             "    global $var_just\n"
+             "    global $var_underline\n"
+             "    global $var_bold\n"
+             "    global $var_italic\n"
+             "    global $var_bg_flag\n"
+             "    global $var_bg\n"
+             "    global $var_fg\n"
+             "    global $var_outline\n"
+             "    global $var_rcv\n"
+             "    global $var_wdt\n"
+             "\n"
+             "    set cmd [concat $id ok \\\n"
+             "        [string map {\" \" {\\ } \";\" \"\" \",\" \"\" \"\\\\\" \"\" \"\\{\" \"\" \"\\}\" \"\"} [eval concat $$var_name]] \\\n"
+             "        [eval concat $$var_size] \\\n"
+             "        [eval concat $$var_wdt] \\\n"
+             "        [eval concat $$var_bold] \\\n"
+             "        [eval concat $$var_italic] \\\n"
+             "        [eval concat $$var_just] \\\n"
+             "        [eval concat $$var_underline] \\\n"
+             "        [eval concat $$var_bg_flag] \\\n"
+             "        [eval concat $$var_bg] \\\n"
+             "        [eval concat $$var_fg] \\\n"
+             "        [eval concat $$var_outline] \\\n"
+             "        [string map {\"$\" {\\$} \" \" {\\ } \";\" \"\" \",\" \"\" \"\\\\\" \"\" \"\\{\" \"\" \"\\}\" \"\"} [eval concat $$var_rcv]]\\;]\n"
+             "    pd $cmd\n"
+    "}\n"
+    "proc note_cancel {id} {\n"
+    "    set cmd [concat $id cancel \\;]\n"
+    "    pd $cmd\n"
+    "}\n"
+    "proc note_properties {id name size width bold italic just underline bg_flag rcv bg fg ol} {\n"
+    "    set vid [string trimleft $id .]\n"
+    "    set var_name [concat var_name_$vid]\n"
+    "    set var_size [concat var_size_$vid]\n"
+    "    set var_just [concat var_just_$vid]\n"
+    "    set var_underline [concat var_underline_$vid]\n"
+    "    set var_bold [concat var_bold_$vid]\n"
+    "    set var_italic [concat var_italic_$vid]\n"
+    "    set var_bg_flag [concat var_bg_flag_$vid]\n"
+    "    set var_bg [concat var_bg_$vid]\n"
+    "    set var_fg [concat var_fg_$vid]\n"
+    "    set var_outline [concat var_outline_$vid]\n"
+    "    set var_rcv [concat var_rcv_$vid]\n"
+    "    set var_wdt [concat var_wdt_$vid]\n"
+    "    set var_col_field [concat var_col_field_$vid]\n"
+    "\n"
+    "    global $var_name\n"
+    "    global $var_size\n"
+    "    global $var_bold\n"
+    "    global $var_italic\n"
+    "    global $var_underline\n"
+    "    global $var_just\n"
+    "    global $var_bg_flag\n"
+    "    global $var_rcv\n"
+    "    global $var_bg\n"
+    "    global $var_fg\n"
+    "    global $var_outline\n"
+    "    global $var_wdt\n"
+    "    global $var_col_field\n"
+    "\n"
+    "    set $var_name [string map {{\\ } \" \"} $name]\n" // remove escape from space
+    "    set $var_size $size\n"
+    "    set $var_bold $bold\n"
+    "    set $var_italic $italic\n"
+    "    set $var_underline $underline\n"
+    "    set $var_just [lindex {Left Center Right} $just]\n"
+    "    set $var_bg_flag $bg_flag\n"
+    "    set $var_bg $bg\n"
+    "    set $var_fg $fg\n"
+    "    set $var_outline $ol\n"
+    "    set $var_wdt $width\n"
+    "    set $var_col_field 0\n"
+    "    if {$rcv == \"empty\"} {set $var_rcv [format \"\"]} else {set $var_rcv [string map {{\\ } \" \"} $rcv]}\n"
+    "\n"
+    "    toplevel $id\n"
+    "    wm title $id {[note] Properties}\n"
+    "    wm protocol $id WM_DELETE_WINDOW [concat note_cancel $id]\n"
+    "\n"
+    "    frame $id.name_size\n"
+    "    pack $id.name_size -side top\n"
+    "    label $id.name_size.lname -text \"Font Name:\"\n"
+    "    entry $id.name_size.name -textvariable $var_name -width 30\n"
+    "    label $id.name_size.lsize -text \"Font Size:\"\n"
+    "    entry $id.name_size.size -textvariable $var_size -width 3\n"
+    "    pack $id.name_size.lname $id.name_size.name $id.name_size.lsize $id.name_size.size -side left\n"
+    "\n"
+    "    frame $id.justification\n"
+    "    pack $id.justification -side top\n"
+    "    checkbutton $id.justification.ol -variable $var_outline \n"
+    "    label $id.justification.oll -text \"Outline:\"\n"
+    "    tk_optionMenu $id.justification.just $var_just Left Center Right\n"
+    "    label $id.justification.lbj -text \"Justification:\"\n"
+    "    pack $id.justification.oll $id.justification.ol $id.justification.lbj $id.justification.just $id.justification.lbj $id.justification.just -side left\n"
+    "\n"
+    "    frame $id.ul_bg\n"
+    "    pack $id.ul_bg -side top\n"
+    "    label $id.ul_bg.lul -text \"Underline:\"\n"
+    "    checkbutton $id.ul_bg.ul -variable $var_underline \n"
+    "    label $id.ul_bg.lbd -text \"Bold:\"\n"
+    "    checkbutton $id.ul_bg.bd -variable $var_bold \n"
+    "    label $id.ul_bg.lit -text \"Italic:\"\n"
+    "    checkbutton $id.ul_bg.it -variable $var_italic \n"
+    "    pack $id.ul_bg.lul $id.ul_bg.ul $id.ul_bg.lbd $id.ul_bg.bd $id.ul_bg.lit $id.ul_bg.it -side left\n"
+    "\n"
+    "    frame $id.rcv_sym\n"
+    "    pack $id.rcv_sym -side top\n"
+    "    label $id.rcv_sym.lrcv -text \"Receive symbol:\"\n"
+    "    entry $id.rcv_sym.rcv -textvariable $var_rcv -width 12\n"
+    "    label $id.rcv_sym.lwdt -text \"Width:\"\n"
+    "    entry $id.rcv_sym.wdt -textvariable $var_wdt -width 12\n"
+    "    pack $id.rcv_sym.lwdt $id.rcv_sym.wdt $id.rcv_sym.lrcv $id.rcv_sym.rcv -side left\n"
+    "\n"
+// colours
+     "    labelframe $id.colors -borderwidth 1 -text [_ \"Colors\"] -padx 5 -pady 5\n"
+     "    pack $id.colors -fill x\n"
+     "\n"
+     "    frame $id.colors.showbg\n"
+     "    pack $id.colors.showbg -side top\n"
+     "    label $id.colors.showbg.lbg -text \"Fill background:\"\n"
+     "    checkbutton $id.colors.showbg.bg -variable $var_bg_flag \n"
+     "    pack $id.colors.showbg.lbg $id.colors.showbg.bg -side left\n"
+     "    frame $id.colors.select\n"
+     "    pack $id.colors.select -side top\n"
+     "    radiobutton $id.colors.select.radio0 -value 0 -variable \\\n"
+     "        $var_col_field -text [_ \"Background\"] -justify left\n"
+     "    radiobutton $id.colors.select.radio1 -value 1 -variable \\\n"
+     "        $var_col_field -text [_ \"Text\"] -justify left\n"
+     "        pack $id.colors.select.radio0 $id.colors.select.radio1 -side left\n"
+     "    frame $id.colors.sections\n"
+     "    pack $id.colors.sections -side top\n"
+     "    button $id.colors.sections.but -text [_ \"Compose color\"] \\\n"
+     "        -command \"choose_col_bkfrlb $id\"\n"
+     "    pack $id.colors.sections.but -side left -anchor w -pady 5 \\\n"
+     "        -expand yes -fill x\n"
+     "    frame $id.colors.sections.exp\n"
+     "    pack $id.colors.sections.exp -side right -padx 5\n"
+     "    if { [eval concat $$var_fg] ne \"none\" } {\n"
+     "        label $id.colors.sections.exp.fr_bk -text \"o=||=o\" -width 6 \\\n"
+     "            -background [eval concat $$var_bg] \\\n"
+     "            -activebackground [eval concat $$var_bg] \\\n"
+     "            -foreground [eval concat $$var_fg] \\\n"
+     "            -activeforeground [eval concat $$var_fg] \\\n"
+     "            -font [list $var_name 14 $::font_weight] -padx 2 -pady 2 -relief ridge\n"
+     "    } else {\n"
+     "        label $id.colors.sections.exp.fr_bk -text \"o=||=o\" -width 6 \\\n"
+     "            -background [eval concat $$var_bg] \\\n"
+     "            -activebackground [eval concat $$var_bg] \\\n"
+     "            -foreground [eval concat $$var_bg] \\\n"
+     "            -activeforeground [eval concat $$var_bg] \\\n"
+     "            -font [list $var_name 14 $::font_weight] -padx 2 -pady 2 -relief ridge\n"
+     "    }\n"
+     "\n"
+     "    # color scheme by Mary Ann Benedetto http://piR2.org\n"
+     "    foreach r {r1 r2 r3} hexcols {\n"
+     "       { \"#FFFFFF\" \"#DFDFDF\" \"#BBBBBB\" \"#FFC7C6\" \"#FFE3C6\" \"#FEFFC6\" \"#C6FFC7\" \"#C6FEFF\" \"#C7C6FF\" \"#E3C6FF\" }\n"
+     "       { \"#9F9F9F\" \"#7C7C7C\" \"#606060\" \"#FF0400\" \"#FF8300\" \"#FAFF00\" \"#00FF04\" \"#00FAFF\" \"#0400FF\" \"#9C00FF\" }\n"
+     "       { \"#404040\" \"#202020\" \"#000000\" \"#551312\" \"#553512\" \"#535512\" \"#0F4710\" \"#0E4345\" \"#131255\" \"#2F004D\" } } \\\n"
+     "    {\n"
+     "       frame $id.colors.$r\n"
+     "       pack $id.colors.$r -side top\n"
+     "       foreach i { 0 1 2 3 4 5 6 7 8 9} hexcol $hexcols \\\n"
+     "           {\n"
+     "               label $id.colors.$r.c$i -background $hexcol -activebackground $hexcol -relief ridge -padx 7 -pady 0 -width 1\n"
+     "               bind $id.colors.$r.c$i <Button> \"preset_col $id $hexcol\"\n"
+     "           }\n"
+     "       pack $id.colors.$r.c0 $id.colors.$r.c1 $id.colors.$r.c2 $id.colors.$r.c3 \\\n"
+     "           $id.colors.$r.c4 $id.colors.$r.c5 $id.colors.$r.c6 $id.colors.$r.c7 \\\n"
+     "           $id.colors.$r.c8 $id.colors.$r.c9 -side left\n"
+     "    }\n"
+     "\n"
+    "    frame $id.buttonframe\n"
+    "    pack $id.buttonframe -side bottom -fill x -pady 2m\n"
+    "    button $id.buttonframe.cancel -text {Cancel} -command \"note_cancel $id\"\n"
+    "    button $id.buttonframe.ok -text {OK} -command \"note_ok $id\"\n"
+    "    pack $id.buttonframe.cancel -side left -expand 1\n"
+    "    pack $id.buttonframe.ok -side left -expand 1\n"
+             "}\n"
+
+     "proc set_col_example {id} {\n"
+     "    set vid [string trimleft $id .]\n"
+     "\n"
+     "    set var_col_field [concat var_col_field_$vid]\n"
+     "    global $var_col_field\n"
+     "    set var_var_bg [concat var_bg_$vid]\n"
+     "    global $var_var_bg\n"
+     "    set var_var_fg [concat var_fg_$vid]\n"
+     "    global $var_var_fg\n"
+     "\n"
+     "    if { [eval concat $$var_var_fg] ne \"none\" } {\n"
+     "        $id.colors.sections.exp.fr_bk configure \\\n"
+     "            -background [eval concat $$var_var_bg] \\\n"
+     "            -activebackground [eval concat $$var_var_bg] \\\n"
+     "            -foreground [eval concat $$var_var_fg] \\\n"
+     "            -activeforeground [eval concat $$var_var_fg]\n"
+     "    } else {\n"
+     "        $id.colors.sections.exp.fr_bk configure \\\n"
+     "            -background [eval concat $$var_var_bg] \\\n"
+     "            -activebackground [eval concat $$var_var_bg] \\\n"
+     "            -foreground [eval concat $$var_var_bg] \\\n"
+     "            -activeforeground [eval concat $$var_var_bg]}\n"
+     "     note_apply $id\n"
+     "}\n"
+     "\n"
+     "proc preset_col {id presetcol} {\n"
+     "    set vid [string trimleft $id .]\n"
+     "    set var_col_field [concat var_col_field_$vid]\n"
+     "    global $var_col_field\n"
+     "\n"
+     "    set var_var_bg [concat var_bg_$vid]\n"
+     "    global $var_var_bg\n"
+     "    set var_var_fg [concat var_fg_$vid]\n"
+     "    global $var_var_fg\n"
+     "\n"
+     "    if { [eval concat $$var_col_field] == 0 } { set $var_var_bg $presetcol }\n"
+     "    if { [eval concat $$var_col_field] == 1 } { set $var_var_fg $presetcol }\n"
+     "    set_col_example $id\n"
+     "}\n"
+     "\n"
+     "proc choose_col_bkfrlb {id} {\n"
+     "    set vid [string trimleft $id .]\n"
+     "\n"
+     "    set var_col_field [concat var_col_field_$vid]\n"
+     "    global $var_col_field\n"
+     "    set var_var_bg [concat var_bg_$vid]\n"
+     "    global $var_var_bg\n"
+     "    set var_var_fg [concat var_fg_$vid]\n"
+     "    global $var_var_fg\n"
+     "\n"
+     "    if {[eval concat $$var_col_field] == 0} {\n"
+     "        set $var_var_bg [eval concat $$var_var_bg]\n"
+     "        set helpstring [tk_chooseColor -title [_ \"Background color\"] -initialcolor [eval concat $$var_var_bg]]\n"
+     "        if { $helpstring ne \"\" } {\n"
+     "            set $var_var_bg $helpstring }\n"
+     "    }\n"
+     "    if {[eval concat $$var_col_field] == 1} {\n"
+     "        set $var_var_fg [eval concat $$var_var_fg]\n"
+     "        set helpstring [tk_chooseColor -title [_ \"Foreground color\"] -initialcolor [eval concat $$var_var_fg]]\n"
+     "        if { $helpstring ne \"\" } {\n"
+     "            set $var_var_fg $helpstring }\n"
+     "    }\n"
+     "    set_col_example $id\n"
+     "}\n");
+
 }

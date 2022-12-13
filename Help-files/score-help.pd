@@ -1,4 +1,4 @@
-#N canvas 547 29 562 530 10;
+#N canvas 449 23 563 529 10;
 #X obj 306 4 cnv 15 250 40 empty empty empty 12 13 0 18 #7c7c7c #e0e4dc
 0;
 #X obj 345 11 cnv 10 10 10 empty empty ELSE 0 15 2 30 #7c7c7c #e0e4dc
@@ -33,8 +33,6 @@
 0;
 #X obj 86 248 cnv 17 3 123 empty empty 0 5 9 0 16 #dcdcdc #9c9c9c 0
 ;
-#X text 102 344 read <symbol> -;
-#X text 96 358 write <symbol> -;
 #X text 150 274 float -;
 #X obj 85 385 cnv 17 3 17 empty empty 0 5 9 0 16 #dcdcdc #9c9c9c 0
 ;
@@ -67,8 +65,6 @@ the user;
 #X text 200 386 event data, f 58;
 #X text 200 425 when sequence is over, f 58;
 #X text 125 454 1) symbol - score file to load (default none);
-#X text 156 316 open -;
-#X text 150 330 close -;
 #X text 200 330 closes edit window, f 58;
 #X text 200 316 opens edit window, f 58;
 #X text 205 124 play/stop;
@@ -78,8 +74,6 @@ the user;
 #X text 334 183 <= click to open;
 #X msg 189 150 start;
 #X msg 233 153 stop;
-#X msg 271 156 open;
-#X msg 309 160 close;
 #X obj 180 185 else/score score-1.txt, f 24;
 #X obj 156 150 bng 17 250 50 0 empty empty empty 17 7 0 10 #dfdfdf
 #000000 #000000;
@@ -97,7 +91,6 @@ notation syntax as [pattern]., f 76;
 #N canvas 374 23 930 320 basic-1 0;
 #X obj 698 80 bng 17 250 50 0 empty empty empty 17 7 0 10 #dfdfdf #000000
 #000000;
-#X obj 533 56 else/score score-1.txt, f 28;
 #X obj 533 82 bng 18 250 50 0 empty empty empty 17 7 0 10 #dfdfdf #000000
 #000000;
 #X obj 518 219 else/out~;
@@ -108,26 +101,13 @@ notation syntax as [pattern]., f 76;
 #X msg 698 164 stop;
 #X text 38 48 The "|" symbol is the syntax for bars - like in [else/sequence]
 and [else/pattern]. This sets a bar number which is output at the 'data'
-outlet allong with 'tempo' messages and whatever else that you specify
+outlet along with 'tempo' messages and whatever else that you specify
 in the score that is not a list starting with a number (which are treated
 as timestamps)., f 68;
 #X obj 533 169 else/play.file~ bagal.aif, f 15;
 #X text 38 18 [score] has a 'tempo' syntax where 'tempo 60' internally
 sets the bpm to 60! The 'tempo' messages are output in the mid 'data'
 outlet., f 68;
-#X text 38 110 The 'timesig' message is necessary to specify the time
-signature and allow [score] to count the number of beats in a bar.
-It must be specified in the beggining of the score right after the
-bar symbol. Time signature changes are possible and need to be specified
-after any bar symbol. The 'timesig' message has the same format as
-in the [metronome] object., f 68;
-#X text 38 187 Note events are specified with list that start with
-a number where the number represents the tempo head within the bar.
-So "1" means the head of the first beat \, 1.5 is an eight note after
-the first bear and so on. Whatever follows the first number comes out
-in the 'event' left outlet and you can treat it in any way you want
-to. If nothing follows the number \, a bang comes out as in this example.
-, f 68;
 #X obj 745 200 else/metronome;
 #X obj 772 225 else/metronome~;
 #X text 38 263 Here we also use a [metronome] object so we can have
@@ -144,30 +124,44 @@ from the score via the 'data' outlet., f 68;
 #X obj 480 19 tgl 18 0 empty empty empty 17 7 0 10 #dfdfdf #000000
 #000000 0 1;
 #X obj 480 91 sel 0;
-#X connect 0 0 8 0;
-#X connect 0 0 20 0;
-#X connect 1 0 2 0;
-#X connect 1 1 4 0;
-#X connect 1 1 17 0;
-#X connect 1 2 0 0;
-#X connect 1 2 18 0;
-#X connect 2 0 10 0;
-#X connect 4 0 6 0;
-#X connect 4 1 7 0;
-#X connect 6 0 14 0;
-#X connect 6 1 14 0;
-#X connect 7 0 14 1;
-#X connect 8 0 14 0;
-#X connect 10 0 3 0;
-#X connect 10 1 3 1;
-#X connect 14 1 15 0;
-#X connect 15 0 5 0;
-#X connect 18 0 22 0;
-#X connect 19 0 18 1;
+#X obj 533 56 else/score score-1.txt, f 28;
+#X text 38 110 The 'timesig' message is necessary to specify the time
+signature and allow [score] to count the number of beats in a bar.
+It must be specified in the beginning of the score right after the
+bar symbol. Time signature changes are possible and need to be specified
+after any bar symbol. The 'timesig' message has the same format as
+in the [metronome] object and as other messages come out in the mid
+outlet., f 68;
+#X text 38 187 Note events are specified as lists that start with a
+number that represent the tempo head within the bar. So "1" means the
+head of the first beat \, 1.5 is an eight note after the first beat
+and so on. Whatever follows the first number comes out in the 'event'
+left outlet and you can treat it in any way you want to. If nothing
+follows the number \, a bang comes out as in this example., f 68;
+#X connect 0 0 7 0;
+#X connect 0 0 17 0;
+#X connect 1 0 9 0;
+#X connect 3 0 5 0;
+#X connect 3 1 6 0;
+#X connect 5 0 11 0;
+#X connect 5 1 11 0;
+#X connect 6 0 11 1;
+#X connect 7 0 11 0;
+#X connect 9 0 2 0;
+#X connect 9 1 2 1;
+#X connect 11 1 12 0;
+#X connect 12 0 4 0;
+#X connect 15 0 19 0;
+#X connect 16 0 15 1;
+#X connect 19 0 22 0;
+#X connect 20 0 21 0;
+#X connect 20 0 22 0;
+#X connect 21 0 7 0;
 #X connect 22 0 1 0;
-#X connect 23 0 24 0;
-#X connect 23 0 1 0;
-#X connect 24 0 8 0;
+#X connect 22 1 3 0;
+#X connect 22 1 14 0;
+#X connect 22 2 0 0;
+#X connect 22 2 15 0;
 #X restore 477 170 pd basic-1;
 #N canvas 491 37 667 622 basic-2 0;
 #X obj 281 177 tgl 18 0 empty empty empty 17 7 0 10 #dfdfdf #000000
@@ -190,7 +184,6 @@ from the score via the 'data' outlet., f 68;
 #X obj 224 248 route tempo, f 5;
 #X obj 333 524 clone 4 score-ex1;
 #X obj 333 378 makenote 1;
-#X obj 333 497 else/voices 4 -list;
 #X obj 333 550 else/out~;
 #X obj 390 347 *;
 #X obj 333 404 else/keyboard 17 80 2 4 0 0 empty empty;
@@ -219,42 +212,45 @@ tempo. We're actually playing 90% of the note duration because of [*
 #X obj 307 252 print event;
 #X obj 419 240 print data ==>;
 #X obj 281 213 else/score score-2.txt, f 42;
-#X connect 0 0 26 0;
-#X connect 0 0 33 0;
+#X obj 333 497 else/voices -list 4;
+#X text 38 139 for tempo changes \, see also:, f 18;
+#X obj 101 157 else/speed;
+#X connect 0 0 25 0;
+#X connect 0 0 32 0;
 #X connect 1 0 13 0;
-#X connect 2 0 25 0;
+#X connect 2 0 24 0;
 #X connect 3 0 0 0;
 #X connect 5 0 7 0;
-#X connect 6 0 23 0;
+#X connect 6 0 22 0;
 #X connect 8 0 9 0;
-#X connect 11 0 19 0;
-#X connect 12 0 22 0;
+#X connect 11 0 18 0;
+#X connect 12 0 21 0;
 #X connect 12 1 11 0;
-#X connect 13 0 21 0;
-#X connect 14 0 24 0;
+#X connect 13 0 20 0;
+#X connect 14 0 23 0;
 #X connect 14 1 6 0;
-#X connect 15 0 18 0;
-#X connect 16 0 20 0;
-#X connect 16 1 20 1;
-#X connect 17 0 15 0;
-#X connect 19 0 16 2;
-#X connect 20 0 17 0;
-#X connect 21 0 19 1;
-#X connect 22 0 16 0;
-#X connect 23 0 25 0;
-#X connect 23 1 25 0;
-#X connect 24 0 25 1;
-#X connect 25 0 4 0;
-#X connect 25 1 5 0;
-#X connect 26 0 2 0;
-#X connect 33 0 12 0;
-#X connect 33 0 31 0;
-#X connect 33 1 1 0;
-#X connect 33 1 14 0;
-#X connect 33 1 32 0;
-#X connect 33 2 8 0;
+#X connect 15 0 17 0;
+#X connect 16 0 19 0;
+#X connect 16 1 19 1;
+#X connect 18 0 16 2;
+#X connect 19 0 33 0;
+#X connect 20 0 18 1;
+#X connect 21 0 16 0;
+#X connect 22 0 24 0;
+#X connect 22 1 24 0;
+#X connect 23 0 24 1;
+#X connect 24 0 4 0;
+#X connect 24 1 5 0;
+#X connect 25 0 2 0;
+#X connect 32 0 12 0;
+#X connect 32 0 30 0;
+#X connect 32 1 1 0;
+#X connect 32 1 14 0;
+#X connect 32 1 31 0;
+#X connect 32 2 8 0;
+#X connect 33 0 15 0;
 #X restore 477 191 pd basic-2;
-#N canvas 760 94 518 528 polyphony 0;
+#N canvas 652 68 518 528 polyphony 0;
 #X obj 306 259 bng 17 250 50 0 empty empty empty 17 7 0 10 #dfdfdf
 #000000 #000000;
 #X obj 127 452 else/out~;
@@ -321,8 +317,13 @@ tempo. We're actually playing 90% of the note duration because of [*
 #X connect 6 0 7 0;
 #X connect 7 0 0 1;
 #X restore 162 409 pd voice;
+#X text 223 324 In this patch we're combining the floats with [combine]
+and split the list with [unpack]. This is because we don't really need
+[makenote] \, [poly] or [else/voices] as the duration is set in the
+[decay~] object inside [pd voice]., f 41;
+#X obj 93 230 else/score score-3.txt, f 36;
 #X text 25 13 The last example showed us how we can have polyphony
-since each event can have its own specified duration. But you can alo
+since each event can have its own specified duration. But you can also
 specify polyphonic events that happen at the same time as in 'chords'.
 One way is to split messages with commas. In this way \, you can also
 have a list for each event \, each with a different duration like the
@@ -331,18 +332,13 @@ represents pitch values., f 76;
 #X text 26 92 Another way is to simply specify another event with the
 same timestamp and it will also be output right after the previous
 one. One little techicality is that when you're using commas they do
-come out togheter as the same event as a loop. One way to prove this
+come out together as the same event as a loop. One way to prove this
 is with the [combine] object that can combine these values with a combine
-time of "0". Otherwise you need to specify a very short time ammount
-"0.001" ms here., f 76;
-#X text 223 324 In this patch we're combining the floats with [combine]
-and split the list with [unpack]. This is because we don't really need
-[makenote] \, [poly] or [else/voices] as the duration is set in the
-[decay~] object inside [pd voice]., f 41;
-#X obj 93 230 else/score score-3.txt, f 36;
+time of "0". Otherwise you need to specify a very short time amount
+\, like "0.001" ms here. Test it below., f 76;
 #X connect 2 0 1 0;
-#X connect 3 0 14 0;
-#X connect 4 0 14 0;
+#X connect 3 0 12 0;
+#X connect 4 0 12 0;
 #X connect 5 0 2 0;
 #X connect 5 1 9 0;
 #X connect 5 2 10 0;
@@ -351,15 +347,21 @@ and split the list with [unpack]. This is because we don't really need
 #X connect 8 0 5 0;
 #X connect 9 0 1 0;
 #X connect 10 0 1 0;
-#X connect 14 0 8 0;
-#X connect 14 2 0 0;
+#X connect 12 0 8 0;
+#X connect 12 2 0 0;
 #X restore 466 213 pd polyphony;
-#X connect 33 0 53 0;
-#X connect 49 0 53 0;
-#X connect 50 0 53 0;
-#X connect 51 0 53 0;
-#X connect 52 0 53 0;
-#X connect 53 0 62 0;
-#X connect 53 1 59 0;
-#X connect 53 2 32 0;
-#X connect 54 0 53 0;
+#X text 156 316 show -;
+#X text 156 330 hide -;
+#X text 102 344 open <symbol> -;
+#X text 102 358 save <symbol> -;
+#X msg 271 156 show;
+#X msg 309 160 hide;
+#X connect 31 0 47 0;
+#X connect 45 0 47 0;
+#X connect 46 0 47 0;
+#X connect 47 0 56 0;
+#X connect 47 1 53 0;
+#X connect 47 2 30 0;
+#X connect 48 0 47 0;
+#X connect 64 0 47 0;
+#X connect 65 0 47 0;

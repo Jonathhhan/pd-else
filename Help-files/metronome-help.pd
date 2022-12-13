@@ -181,8 +181,7 @@ divider values. Check its help file., f 93;
 #X connect 52 0 10 0;
 #X connect 53 0 10 1;
 #X restore 497 218 pd clock;
-#X text 147 597 1) float - (optional) tempo in BPM (default 120),
-f 49;
+#X text 147 597 1) float - (optional) tempo in BPM (default 120);
 #X text 191 305 - non-zero (re)starts \, zero stops, f 47;
 #X text 18 182 see also:;
 #X obj 18 201 else/clock;
@@ -230,36 +229,36 @@ f 20;
 #X text 610 84 (0.25 is '1/4');
 #X text 513 232 (0.125 is '1/8');
 #X text 46 16 A beat length can be specified as a fraction (such as
-'1/4' \, the default value) or a float (where 0.25 is the same as 1/4).
-A beat length of 1/4 means the beat is a quarter note. So the tempo
-value in BPM considers a fourth note. You can set the beat legnth with
-the 'beat' message or '-beat' flag. You can set it before a time signature
-change., f 51;
+'1/4' \, the default value) or a float (where 0.25 is the same as
+1/4). A beat length of 1/4 means the beat is a quarter note. So the
+tempo value in BPM considers a fourth note. You can set the beat length
+with the 'beat' message or '-beat' flag. You can set it before a time
+signature change., f 51;
 #X text 46 102 A beat length to "1/2" sets the BPM value for a half
 note. If you have a 4/4 time signature \, this means that each beat
 (which is a quarter note here) will have a beat twice as fast than
 the given tempo (that is an actual BPM which is the double) and the
-actual beat lenght is half! Both actual beat lenght and actual BPM
+actual beat length is half! Both actual beat length and actual BPM
 is given by the rightmost output \, along with the bar duration in
 ms., f 51;
 #X text 46 195 In the same way \, a beat length of "1/8" is an 8th
 note \, so a 4/4 time signature has an actual BPM that is twice as
-slow and an actual beat lenght that is equal to 2!, f 51;
+slow and an actual beat length that is equal to 2!, f 51;
 #X text 46 246 If you set a "6/8" time signature \, it will give you
 two groups of beats subdivided by 3 \, that means you get two beats
-whose lenght is 3/8 (the same as a dotted quarter note). With the default
+whose length is 3/8 (the same as a dotted quarter note). With the default
 beat length of 1/4 (a quarter note instead of a dotted quarter note)
-you have an actual beat lenght of 1.5! If you want the given tempo
+you have an actual beat length of 1.5! If you want the given tempo
 to reflect a beat duration of 3/8 \, just send the "beat 3/8" message.
 Now the two rightmost outlets will make sure that the beat length is
 "1" and the BPM corresponds to the given one. Each 8th note is now
 one third of the beat., f 51;
-#X text 46 418 Note you can also set other beat lenghts that correspond
-to tuplets. A beat lenght of "1/6" considers a quarter note triplet
-as the beat lenght. For a "2/4" signature \, the actual beat lenght
+#X text 46 418 Note you can also set other beat lengths that correspond
+to tuplets. A beat length of "1/6" considers a quarter note triplet
+as the beat length. For a "2/4" signature \, the actual beat length
 is 1.5 \, because a quarter note fits 1.5 quarter note triplets (or
-3 8th note triplets) inside. Note that this has the same beat lenght
-and number of tempos than a 6/8 time signature with a beat lenght of
+3 8th note triplets) inside. Note that this has the same beat length
+and number of tempos than a 6/8 time signature with a beat length of
 1/4!, f 65;
 #X connect 0 0 21 0;
 #X connect 1 0 21 0;
@@ -356,13 +355,13 @@ On the other hand 3/5 is three beats of a quarter note quintuplet.
 , f 86;
 #X text 19 298 Let's get a bit crazier now and use an 8:9 tuplet for
 8th notes (where we have eight 8th notes in the space of nine 8th notes)
-and consider two of them (hence \, a quarter note) as the beat lenght.
+and consider two of them (hence \, a quarter note) as the beat length.
 The ratio is actually "4:4.5" but let's use the "8:9" and multiply
 it by 4 (as the base measure is a fourth note). So 8:9 x 4 is "32:9"
 \, which is "3.555556". Therefore \, 4/3.555556 means 4 beats that
 fit into 9 eight notes., f 86;
-#X text 19 475 The time signature only accepts integers for the numerator
-(number of beats) \, but it accepts floats as the denumerator as well
+#X text 19 475 The time signature only accepts integers for the numberator
+(number of beats) \, but it accepts floats as the denumberator as well
 as fractions in parenthesis. Hence \, you can define "2/2.66667" or
 2/(8/3). Likewise: "4/3.555556" or 4/(32/9). Both formats work! Number
 in fractions don't need to be integers as well so all crazy things
@@ -430,7 +429,7 @@ have '56/5'. For 5 in the space of 3 you have 5:3 \, times 8 it's '40/3'.
 #X text 197 193 automatically grouped in 7 (1 sub-beats each);
 #X text 17 70 The default time signature is 4/4., f 78;
 #X text 17 33 Group makes sense for compound time signatures. By default
-\, the group number is 1 \, but for the numerator 6 \, 9 and 12 (as
+\, the group number is 1 \, but for the numberator 6 \, 9 and 12 (as
 in 6/8 \, 9/8 and 12/8) the default group number is \, respectively
 \, 2 \, 3 and 4 \, see examples below., f 78;
 #X text 17 7 Time signatures are specified by symbols in the usual
@@ -439,8 +438,6 @@ the number of sub-beats)., f 78;
 #X msg 128 220 timesig 3/4;
 #X obj 24 147 tgl 20 0 empty empty empty 17 7 0 10 #dfdfdf #000000
 #000000 0 1;
-#X text 29 565 Similarly \, 7/8 considers an eigth note as the tempo
-\, so you have "0.5" and "120" instead., f 77;
 #X text 204 220 automatically grouped in 3 (1 sub-beats each);
 #X obj 85 383 bng 22 250 50 0 empty empty empty 17 7 0 10 #dcdcdc #000000
 #000000;
@@ -456,7 +453,7 @@ the number of sub-beats)., f 78;
 So 3/4 does not have the same tempo duration as 6/8! This is clear
 in rightmost outlet. For instance \, 6/8 grouped in 2 considers that
 a beat is three eight notes. In relation to a 60 bpm for a quarter
-note as a base beat lenght we have a beat that is "1.5" and an actual
+note as a base beat length we have a beat that is "1.5" and an actual
 bpm of "40"., f 77;
 #X text 172 326 bar \; sub-bar \; beat \; sub-beat;
 #X obj 166 414 else/metronome~;
@@ -468,22 +465,24 @@ bpm of "40"., f 77;
 #X obj 85 304 else/metronome 90 15/8 5, f 41;
 #X text 347 296 actual beat length actual tempo and bar duration (ms)
 , f 27;
-#X connect 0 0 33 0;
-#X connect 1 0 33 0;
-#X connect 2 0 33 0;
-#X connect 3 0 33 0;
-#X connect 4 0 33 0;
-#X connect 13 0 33 0;
-#X connect 14 0 33 0;
-#X connect 20 0 21 0;
-#X connect 23 0 27 0;
-#X connect 27 0 19 0;
-#X connect 29 0 33 0;
-#X connect 31 0 33 0;
-#X connect 33 0 17 0;
-#X connect 33 1 23 0;
-#X connect 33 2 20 0;
-#X connect 33 3 24 0;
+#X text 29 565 Similarly \, 7/8 considers an eighth note as the tempo
+\, so you have "0.5" and "120" instead., f 77;
+#X connect 0 0 32 0;
+#X connect 1 0 32 0;
+#X connect 2 0 32 0;
+#X connect 3 0 32 0;
+#X connect 4 0 32 0;
+#X connect 13 0 32 0;
+#X connect 14 0 32 0;
+#X connect 19 0 20 0;
+#X connect 22 0 26 0;
+#X connect 26 0 18 0;
+#X connect 28 0 32 0;
+#X connect 30 0 32 0;
+#X connect 32 0 16 0;
+#X connect 32 1 22 0;
+#X connect 32 2 19 0;
+#X connect 32 3 23 0;
 #X restore 64 67 pd basic;
 #X text 153 97 or "non power of two";
 #N canvas 470 70 606 541 complex 0;
@@ -530,7 +529,7 @@ change., f 81;
 #X connect 16 3 8 0;
 #X restore 64 127 pd complex;
 #X text 122 67 simplel & compound;
-#X text 138 127 complex (alternate or aggreagate);
+#X text 138 127 complex (alternate or aggregate);
 #X restore 479 136 pd time-sig;
 #X text 191 472 - bar \, sub-bar \, beat and sub-beat count, f 47
 ;
@@ -695,13 +694,13 @@ the 0-1 range., f 101;
 #X text 30 71 Considering 960 is a quarter note \, this allows you
 to precisely match down to 256th notes (15 frames or 0.015625) \, triplets
 down to a 512th triplet (5 frames) and quintuplets down to 1024th (3
-frames). It can't precisely handle othe tuplets (like 7 \, 9 \, 11
-\, etc) but you can use the [>] object for aproximations. Using [>]
+frames). It can't precisely handle other tuplets (like 7 \, 9 \, 11
+\, etc) but you can use the [>] object for approximations. Using [>]
 can also be useful for ratios like one third of the phase output (0.33333)
 as it won't really match. On the other hand \, converting fractions
 as the example to right is possible to match precisely. In the example
 below \, instead of using [>] \, we use [above] from ELSE \, which
-is a simple asbtraction based on [>] \, [change] and [select]., f
+is a simple abstraction based on [>] \, [change] and [select]., f
 101;
 #X connect 0 0 1 0;
 #X connect 0 0 6 0;
@@ -776,8 +775,8 @@ output. It also syncs to [clock] objects., f 70;
 #X text 60 19 The -sub flag sets to subdivision (or subtempo) mode
 \, where the bang output also bangs at subtempos. You can also use
 the 'sub' message where non zero sets to subdivision mode and zero
-sets to the default mode (only bang at tempo number changes)., f 64
-;
+sets to the default mode (only bang at tempo number changes)., f
+64;
 #X connect 0 0 15 0;
 #X connect 1 0 15 1;
 #X connect 2 0 1 0;
@@ -838,7 +837,7 @@ tempo of 60 BPM., f 48;
 beat length or the tempo instead of the time signatures \, the procedure
 is the same. For this example \, we wanted to change the tempo to a
 dotted quarter note \, which is also a 2:3 tuplet. So instead you can
-multuply for for 2/3. The BPM is 60 instead of 90 and the beat lenght
+multuply for for 2/3. The BPM is 60 instead of 90 and the beat length
 is 1/6 (two thirds of 1/4)., f 48;
 #X msg 471 167 tempo 84 \, beat 1/4 \, timesig 7/8 \, bang;
 #X text 38 347 For the next example we have a 5/8 and if we want a

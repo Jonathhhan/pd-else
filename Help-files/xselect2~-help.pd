@@ -69,7 +69,7 @@ f 24;
 #X obj 125 297 else/xselect2~ 3 0, f 35;
 #X text 40 24 You can set the operation mode of [xselect2~] with the
 second argument \, 1 sets to indexed mode (default) and 0 sets to non-indexed
-mode. You can also use the index message to change bewteen modes.;
+mode. You can also use the index message to change between modes.;
 #X text 42 84 In the default mode of [xselect2~] (indexed) \, the integer
 part represents the channel (indexed from 0) and the fractional part
 the crossfading point.;
@@ -105,7 +105,7 @@ power crossfade between two adjacent channels.;
 0;
 #N canvas 899 163 467 356 example 0;
 #X obj 85 144 else/rand.i~ 0 3;
-#X obj 85 177 else/display~;
+#X obj 85 173 else/numbox~ 3 12 100 #c0c0c4 #440008 10 0 0 0;
 #X obj 85 282 else/out~;
 #X obj 144 195 noise~;
 #X text 106 38 An example on how to change the input channel at signal

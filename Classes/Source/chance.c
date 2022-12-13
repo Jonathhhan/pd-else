@@ -1,17 +1,18 @@
 // porres 2020
 
 #include "m_pd.h"
+#include "random.h"
 
 static t_class *chance_class;
 
 typedef struct _chance{
     t_object    x_obj;
     t_atom     *x_av;
-    t_int       x_val;
-    int         x_index;
+    t_random_state x_rstate;
     int         x_ac;
     int         x_bytes;
     int         x_coin;
+    int         x_id;
     float       x_chance;
     t_float     x_range;
     t_outlet  **x_outs;
@@ -25,16 +26,26 @@ static void chance_output(t_chance *x, t_floatarg f){
     else{
         for(n = 0; n < x->x_ac; n++){
             if(f < x->x_av[n].a_w.w_float){
-                x->x_index ? outlet_float(x->x_out_index, n+1) : outlet_bang(x->x_outs[n]);
+                outlet_bang(x->x_outs[n]);
                 return;
             }
         }
     }
 }
 
+static void chance_bang(t_chance *x){
+    uint32_t *s1 = &x->x_rstate.s1;
+    uint32_t *s2 = &x->x_rstate.s2;
+    uint32_t *s3 = &x->x_rstate.s3;
+    t_float random = (t_float)(random_frand(s1, s2, s3));
+    chance_output(x, x->x_range * (random + 1) / 2);
+}
+
 static void chance_list(t_chance *x, t_symbol *s, int argc, t_atom *argv){
     s = NULL;
-    if(!x->x_coin){
+    if(!argc)
+        chance_bang(x);
+    else if(!x->x_coin){
         x->x_range = 0;
         for(int i = 0; i < x->x_ac; i++){
             if(argv->a_type == A_FLOAT){
@@ -46,25 +57,17 @@ static void chance_list(t_chance *x, t_symbol *s, int argc, t_atom *argv){
     }
 }
 
-static void chance_bang(t_chance *x){
-    int val = x->x_val;
-    t_float random = ((float)((val & 0x7fffffff) - 0x40000000)) * (float)(1.0 / 0x40000000);
-    chance_output(x, x->x_range * (random + 1) / 2);
-    x->x_val = val * 435898247 + 382842987;
-}
-
-static void chance_seed(t_chance *x, t_float f){
-    x->x_val = (int)f * 1319;
+static void chance_seed(t_chance *x, t_symbol *s, int ac, t_atom *av){
+    random_init(&x->x_rstate, get_seed(s, ac, av, x->x_id));
 }
 
 static void *chance_new(t_symbol *s, int argc, t_atom *argv){
     s = NULL;
     t_chance *x = (t_chance *)pd_new(chance_class);
-    static int init_seed = 54569;
+    x->x_id = random_get_id();
     x->x_range = 0;
-    x->x_index = 0;
     x->x_coin = 0;
-    int seedarg = 0;
+    chance_seed(x, s, 0, NULL);
     t_outlet **outs;
     if(!argc){
         x->x_bytes = x->x_ac*sizeof(t_atom);
@@ -108,13 +111,11 @@ static void *chance_new(t_symbol *s, int argc, t_atom *argv){
                 n++, argv++, argc--;
             }
             else if(argv->a_type == A_SYMBOL && !n){
-                if(atom_getsymbolarg(0, argc, argv) == gensym("-index")){
-                    x->x_index = 1;
-                    x->x_ac--, argc--, argv++;
-                }
-                else if(atom_getsymbolarg(0, argc, argv) == gensym("-seed")){
-                    seedarg = atom_getfloatarg(1, argc, argv);
+                if(atom_getsymbolarg(0, argc, argv) == gensym("-seed")){
+                    t_atom at[1];
+                    SETFLOAT(at, atom_getfloat(argv+1));
                     x->x_ac-=2, argc-=2, argv+=2;
+                    chance_seed(x, s, 1, at);
                 }
                 else
                     goto errstate;
@@ -122,20 +123,12 @@ static void *chance_new(t_symbol *s, int argc, t_atom *argv){
             else
                 goto errstate;
         }
-        if(!x->x_index){
-            for(int i = 0; i < x->x_ac; i++)
-                x->x_outs[i] = outlet_new(&x->x_obj, &s_bang);
-        }
+        for(int i = 0; i < x->x_ac; i++)
+            x->x_outs[i] = outlet_new(&x->x_obj, &s_bang);
+        
     }
-    init_seed *= 1319;
-    if(seedarg)
-        x->x_val = seedarg *= 1319;
-    else
-        x->x_val = init_seed; // load seed value
     if(x->x_coin)
         floatinlet_new(&x->x_obj, &x->x_chance);
-    if(x->x_index)
-        x->x_out_index = outlet_new(&x->x_obj, &s_float);
     return(x);
 errstate:
     pd_error(x, "[chance]: improper args");
@@ -145,7 +138,6 @@ errstate:
 void chance_setup(void){
     chance_class = class_new(gensym("chance"), (t_newmethod)chance_new,
         0, sizeof(t_chance), 0, A_GIMME, 0);
-    class_addmethod(chance_class, (t_method)chance_seed, gensym("seed"), A_DEFFLOAT, 0);
-    class_addbang(chance_class, chance_bang);
+    class_addmethod(chance_class, (t_method)chance_seed, gensym("seed"), A_GIMME, 0);
     class_addlist(chance_class, chance_list);
 }

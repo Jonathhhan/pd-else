@@ -76,8 +76,8 @@ f 52;
 #X text 227 373 - sets min/max range values (default 0 127), f 52
 ;
 #X text 227 344 - sets width size (default 127), f 52;
-#X text 227 358 - sets heigth size (default 127), f 52;
-#X text 100 504 -width <float> | -heigth <float> | -range <f \, f>
+#X text 227 358 - sets height size (default 127), f 52;
+#X text 100 504 -width <float> | -height <float> | -range <f \, f>
 | -mode <float> | -bgcolor <f \, f \, f> | -fgcolor <f \, f \, f> |
 -send <symbol> | -receive <symbol>, f 66;
 #X text 227 429 - sets send symbol (default empty), f 52;

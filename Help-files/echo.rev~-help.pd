@@ -42,7 +42,7 @@
 #X text 191 383 signal;
 #X obj 150 353 cnv 17 3 17 empty empty 1 5 9 0 16 #dcdcdc #9c9c9c 0
 ;
-#X text 81 85 [echo.rev~] is an echo/reverb asbtraction. It only contains
+#X text 81 85 [echo.rev~] is an echo/reverb abstraction. It only contains
 feedforward lines and can be used to produce early reflections in a
 reverb algorithm. But it can also be used on its own., f 62;
 #X obj 186 187 else/play.file~ bubul.wav 1 1;

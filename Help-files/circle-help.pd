@@ -111,7 +111,7 @@ output the incoming value., f 56;
 #X msg 328 198 yrange -1 1;
 #X text 67 29 By default \, the slider output range is from -1 to 1
 \, but you can change it with the -range flag or the range message
-\, which sets the range for both x and y dimenstions. But you can also
+\, which sets the range for both x and y dimensions. But you can also
 set independent range for both x and y with the -xrange \, -yrange
 or xrange \, yrange messages. Note that a bang rescales the last output
 according to the new range., f 64;

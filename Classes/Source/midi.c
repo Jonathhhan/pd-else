@@ -1,21 +1,26 @@
 // based on cyclone's [seq]
 
+#ifdef _MSC_VER
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
 #include "m_pd.h"
 #include "elsefile.h"
 #include "mifi.h"
 
 #define PANIC_VOID                  0xFF
-#define MIDI_INISEQSIZE             256     // LATER rethink
-#define MIDI_INITEMPOMAPSIZE        128     // LATER rethink
-#define MIDI_EOM                    255     // end of message marker, LATER rethink
+#define MIDI_INISEQSIZE             256    // LATER rethink
+#define MIDI_INITEMPOMAPSIZE        128    // LATER rethink
+#define MIDI_META                   255    // META marker
 #define MIDI_TICKSPERSEC            48
-#define MIDI_MINTICKDELAY           1.      // LATER rethink
-#define MIDI_TICKEPSILON  ((double) .0001)
-#define MIDI_STARTEPSILON           .0001   // if inside: play unmodified
-#define MIDI_TEMPOEPSILON           .0001   // if inside: pause
+#define MIDI_MINTICKDELAY           1.     // LATER rethink
+#define MIDI_TICKEPSILON ((double) .0001)
+#define MIDI_STARTEPSILON          .0001   // if inside: play unmodified
+#define MIDI_TEMPOEPSILON          .0001   // if inside: pause
 #define MIDI_ISRUNNING(x) ((x)->x_prevtime > (double).0001)
 #define MIDI_ISPAUSED(x) ((x)->x_prevtime <= (double).0001)
 
@@ -35,7 +40,7 @@ typedef struct _midi{
     t_object       x_ob;
     t_canvas      *x_canvas;
     t_symbol      *x_defname;
-    t_elsefile        *x_elsefilehandle;
+    t_elsefile    *x_elsefilehandle;
     int            x_loop;
     int            x_mode;
     int            x_playhead;
@@ -123,7 +128,7 @@ static void midi_panic(t_midi *x){
    default value (failure).
    Upon return *nrequested contains the actual number of elements:
    requested (success) or a given default value of 'inisize' (failure). */
-void *grow_nodata(int *nrequested, int *sizep, void *bufp,
+static void *grow_nodata(int *nrequested, int *sizep, void *bufp,
 int inisize, void *bufini, size_t typesize){
     int newsize = *sizep * 2;
     while(newsize < *nrequested)
@@ -143,7 +148,7 @@ int inisize, void *bufini, size_t typesize){
 }
 
 /* Like grow_nodata(), but preserving first *nexisting elements. */
-void *grow_withdata(int *nrequested, int *nexisting, int *sizep, void *bufp,
+static void *grow_withdata(int *nrequested, int *nexisting, int *sizep, void *bufp,
 int inisize, void *bufini, size_t typesize){
     int newsize = *sizep * 2;
     while(newsize < *nrequested)
@@ -199,21 +204,22 @@ static int midi_dogrowing(t_midi *x, int nevents, int ntempi){
 }
 
 static void midi_complete(t_midi *x){
-    if(x->x_evelength < x->x_expectedlength){ /* CHECKED no warning if no data after status byte requiring data */
+    if(x->x_evelength < x->x_expectedlength){
+        // no warning if no data after status byte requiring data
         if(x->x_evelength > 1)
-            post("midi: truncated midi message");  /* CHECKED */
-    /* CHECKED nothing stored */
+            post("midi: truncated midi message");  // CHECKED
+    // CHECKED nothing stored
     }
     else{
         t_midievent *ep = &x->x_sequence[x->x_nevents];
         ep->e_delta = clock_gettimesince(x->x_prevtime);
         x->x_prevtime = clock_getlogicaltime();
         if(x->x_evelength < 4)
-            ep->e_bytes[x->x_evelength] = MIDI_EOM;
+            ep->e_bytes[x->x_evelength] = MIDI_META;
         x->x_nevents++;
         if(x->x_nevents >= x->x_midisize){
             int nexisting = x->x_midisize;
-        /* store-ahead scheme, LATER consider using x_currevent */
+        // store-ahead scheme, LATER consider using x_currevent
             int nrequested = x->x_nevents + 1;
             x->x_sequence = grow_withdata(&nrequested, &nexisting, &x->x_midisize, x->x_sequence,
                   MIDI_INISEQSIZE, x->x_midiini, sizeof(*x->x_sequence));
@@ -521,7 +527,7 @@ static void midi_dump(t_midi *x){
         unsigned char *bp = ep->e_bytes;
         outlet_float(((t_object *)x)->ob_outlet, (float)*bp);
         int i;
-        for(i = 0, bp++; i < 3 && *bp != MIDI_EOM; i++, bp++)
+        for(i = 0, bp++; i < 3 && *bp != MIDI_META; i++, bp++)
             outlet_float(((t_object *)x)->ob_outlet, (float)*bp);
         ep++;
     }
@@ -556,15 +562,15 @@ static void midi_clocktick(t_midi *x){
         output = (t_float)*bp++;
         outlet_float(((t_object *)x)->ob_outlet, output);
         panic_input(x, output);
-        if(*bp != MIDI_EOM){
+        if(*bp != MIDI_META){
             output = (t_float)*bp++;
             outlet_float(((t_object *)x)->ob_outlet, output);
             panic_input(x, output);
-            if(*bp != MIDI_EOM){
+            if(*bp != MIDI_META){
                 output = (t_float)*bp++;
                 outlet_float(((t_object *)x)->ob_outlet, output);
                 panic_input(x, output);
-                if(*bp != MIDI_EOM){
+                if(*bp != MIDI_META){
                     output = (t_float)*bp++;
                     outlet_float(((t_object *)x)->ob_outlet, output);
                     panic_input(x, output);
@@ -666,10 +672,10 @@ static int midi_mrhook(t_mifiread *mr, void *hookdata, int evtype){
             sev->e_bytes[0] = status | mifiread_getchannel(mr);
             sev->e_bytes[1] = mifiread_getdata1(mr);
             if(MIFI_ONEDATABYTE(status) || evtype == 0x2f)
-                sev->e_bytes[2] = MIDI_EOM;
+                sev->e_bytes[2] = MIDI_META;
             else{
                 sev->e_bytes[2] = mifiread_getdata2(mr);
-                sev->e_bytes[3] = MIDI_EOM;
+                sev->e_bytes[3] = MIDI_META;
             }
         }
         else if(x->x_eventreadhead == x->x_nevents){
@@ -727,8 +733,7 @@ static int midi_mfread(t_midi *x, char *path){
         goto mfreadfailed;
     if(x->x_eventreadhead < x->x_nevents){
         pd_error(x, "bug [midi]: midi_mfread 1");
-        post("declared %d events, got %d",
-        x->x_nevents, x->x_eventreadhead);
+        post("declared %d events, got %d", x->x_nevents, x->x_eventreadhead);
         x->x_nevents = x->x_eventreadhead;
     }
     if(x->x_nevents)
@@ -748,7 +753,7 @@ mfreadfailed:
 }
 
 static void midi_click(t_midi *x){
-    panel_open(x->x_elsefilehandle, 0);
+    elsefile_panel_click_open(x->x_elsefilehandle);
 }
 
 static int midi_mfwrite(t_midi *x, char *path){
@@ -764,7 +769,7 @@ static int midi_mfwrite(t_midi *x, char *path){
         unsigned char *bp = sev->e_bytes;
         unsigned status = *bp & 0xf0;
         if(status > 127 && status < 240){
-            if(!mifiwrite_channelevent(mw, sev->e_delta, status, *bp & 0x0f, bp[1], bp[2])){  /* MIDI_EOM ignored */
+            if(!mifiwrite_channelevent(mw, sev->e_delta, status, *bp & 0x0f, bp[1], bp[2])){  /* MIDI_META ignored */
                 pd_error(x, "[midi] cannot write channel event %d", status);
                 goto mfwritefailed;
             }
@@ -810,7 +815,7 @@ static int midi_fromatoms(t_midi *x, int ac, t_atom *av){
             }
             else if(av->a_type == A_SEMI && i > 0){
                 if(i < 4)
-                    ep->e_bytes[i] = MIDI_EOM;
+                    ep->e_bytes[i] = MIDI_META;
                 nevents++;
                 ep++;
                 i = -1;
@@ -827,7 +832,7 @@ static void midi_textread(t_midi *x, char *path){
     t_binbuf *bb;
     bb = binbuf_new();
     if(binbuf_read(bb, path, "", 0)) // CHECKED no complaint, open dialog presented
-        panel_open(x->x_elsefilehandle, 0);  // LATER rethink
+        elsefile_panel_click_open(x->x_elsefilehandle);  // LATER rethink
     else{
         int nlines = /* CHECKED absolute timestamps */
             midi_fromatoms(x, binbuf_getnatom(bb), binbuf_getvec(bb));
@@ -850,7 +855,7 @@ static void midi_tobinbuf(t_midi *x, t_binbuf *bb){
         SETFLOAT(ap, ep->e_delta);  // CHECKED same for sysex continuation
         ap++;
         SETFLOAT(ap, *bp);
-        for(i = 0, ap++, bp++; i < 3 && *bp != MIDI_EOM; i++, ap++, bp++)
+        for(i = 0, ap++, bp++; i < 3 && *bp != MIDI_META; i++, ap++, bp++)
             SETFLOAT(ap, *bp);
         binbuf_add(bb, i + 2, at);
         binbuf_addsemi(bb);
@@ -869,22 +874,19 @@ static void midi_textwrite(t_midi *x, char *path){
 }
 
 static void midi_doread(t_midi *x, t_symbol *fn){
-    char buf[MAXPDSTRING];
-    if(x->x_canvas) // FIXME use open_via_path()
-        canvas_makefilename(x->x_canvas, fn->s_name, buf, MAXPDSTRING);
-    else{
-        strncpy(buf, fn->s_name, MAXPDSTRING);
-        buf[MAXPDSTRING-1] = 0;
-    }
-    FILE *fp = sys_fopen(buf, "r");
-    if(!(fp)){
-        post("[midi] elsefile '%s' not found", buf);
-        fclose(fp);
+    static char fname[MAXPDSTRING];
+    char *bufptr;
+    int fd = canvas_open(x->x_canvas, fn->s_name, "", fname, &bufptr, MAXPDSTRING, 1);
+    if(fd < 0){
+        post("[midi] file '%s' not found", fn->s_name);
         return;
     }
-    fclose(fp);
-    if(!midi_mfread(x, buf))
-        midi_textread(x, buf);
+    else{
+        fname[strlen(fname)]='/';
+        sys_close(fd);
+    }
+    if(!midi_mfread(x, fname))
+        midi_textread(x, fname);
     x->x_playhead = 0;
 }
 
@@ -926,14 +928,14 @@ static void midi_read(t_midi *x, t_symbol *s){
     if(s && s != &s_)
         midi_doread(x, s);
     else
-        panel_open(x->x_elsefilehandle, 0);
+        elsefile_panel_click_open(x->x_elsefilehandle);
 }
 
 static void midi_write(t_midi *x, t_symbol *s){
     if(s && s != &s_)
         midi_dowrite(x, s);
     else  // creation arg is a default elsefile name
-        panel_save(x->x_elsefilehandle, canvas_getdir(x->x_canvas), x->x_defname); // always start in canvas dir
+        elsefile_panel_save(x->x_elsefilehandle, canvas_getdir(x->x_canvas), x->x_defname); // always start in canvas dir
 }
 
 static void midi_free(t_midi *x){

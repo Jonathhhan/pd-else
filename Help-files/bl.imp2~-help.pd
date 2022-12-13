@@ -65,7 +65,7 @@ in the way it handles it \, this object does not have any arguments.
 0;
 #X text 60 87 [bl.imp2~] is a two sided impulse oscillator like [else/imp2~]
 \, but it is bandlimited with the upsampling/filtering technique. This
-makes the object quite ineficient CPU wise \, but is an easy way to
+makes the object quite inefficient CPU wise \, but is an easy way to
 implement a bandlimited oscillator., f 67;
 #X text 182 457 1) float;
 #X text 182 476 2) float;

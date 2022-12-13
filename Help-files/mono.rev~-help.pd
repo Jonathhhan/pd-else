@@ -185,7 +185,7 @@
 #X text 256 377 - room size (0-1), f 33;
 #X text 167 377 wet <float>;
 #X text 129 470 1) float - decay in seconds (default 1), f 57;
-#X text 53 82 [mono.rev~] is a reverb asbtraction with mono input but
+#X text 53 82 [mono.rev~] is a reverb abstraction with mono input but
 stereo output. It's based on a feedback delay network like vanilla's
 [rev3~] object \, but it offers a "room size" parameter whose typical
 value is around 0.5 \, values closer to 0 and 1 may create unusual

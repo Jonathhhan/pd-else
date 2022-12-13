@@ -59,7 +59,7 @@
 #X obj 138 40 cnv 4 4 4 empty empty values 0 28 2 18 #e0e0e0 #000000
 0;
 #X text 217 374 - sets exponential value;
-#X text 241 181 converts setted value or sends last output;
+#X text 241 181 converts set value or sends last output;
 #X text 130 374 exp <float>;
 #X obj 222 273 else/display;
 #X text 111 511 1) list -;
